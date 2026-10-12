@@ -1,16 +1,63 @@
-# React + Vite
+# TAMP Monorepo
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This repo contains the React frontend and a lightweight Express backend prepared for Supabase + EmailJS integration.
 
-Currently, two official plugins are available:
+## Project structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/` — Vite React frontend
+- `public/site/` — original student site files preserved from the static project
+- `public/admin/` — original admin site files preserved from the static project
+- `backend/` — Express API for auth, onboarding, dashboard data, and admin endpoints
+- `vercel.json` — deployment rewrite rules for SPA routing
 
-## React Compiler
+## Frontend
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+```
 
-## Expanding the Oxlint configuration
+## Backend
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+cd backend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+## Required backend environment values
+
+See `backend/.env.example` and fill in:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `EMAILJS_SERVICE_ID`
+- `EMAILJS_TEMPLATE_ID`
+- `EMAILJS_PUBLIC_KEY`
+- `EMAILJS_PRIVATE_KEY`
+- `JWT_SECRET`
+- `FRONTEND_URL`
+
+## Current implementation notes
+
+- Email verification is wired to EmailJS
+- Phone verification is intentionally left as `coming_soon`
+- Supabase is supported as the persistence layer, but the app is still compatible with the local in-memory fallback during setup
+- The admin route is available at `/ADMIN19841812`
+
+## Deployment
+
+- Frontend: Vercel
+- Backend: Vercel or another Node-compatible host
+- SPA routing is handled in `vercel.json`
+
+## GitHub push
+
+This repo has already been initialized with an initial Git commit and is ready to push to a remote repository.
+
+```bash
+git remote add origin <your-github-repository-url>
+git push -u origin master
+```
