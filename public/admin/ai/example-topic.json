@@ -1,0 +1,24 @@
+{
+  "note": "Style example for the AI: one finished topic (shortened). Real topics are 600 to 900 words.",
+  "schema": "tamp.topics.v1",
+  "courseId": "data-analysis",
+  "topics": [{
+    "n": 4, "minutes": 50,
+    "blocks": [
+      {"t": "h", "x": "What you will learn today"},
+      {"t": "p", "x": "Today you will open a spreadsheet for the first time and learn its three building blocks: cells, rows and columns. By the end you will be able to type data into a sheet and tell a friend where each number lives."},
+      {"t": "tip", "x": "Use the free Google Sheets on your phone or computer. You only need a Gmail account."},
+      {"t": "vid", "title": "A beginner's tour of Google Sheets", "searchQuery": "Google Sheets beginner tutorial for first time users"},
+      {"t": "h", "x": "Cells, rows and columns"},
+      {"t": "p", "x": "A spreadsheet is a big grid. Each small box is a cell. A row runs left to right and has a number. A column runs up and down and has a letter. Every cell has an address made from its column and row, like B3."},
+      {"t": "p", "x": "Imagine a shop owner in Aba who writes the price of each item in a notebook. In a spreadsheet, the item names go in column A and the prices go in column B. Row 2 might hold 'Rice' in A2 and 45000 in B2."},
+      {"t": "code", "lang": "spreadsheet", "lines": ["A1: Item     B1: Price (NGN)", "A2: Rice     B2: 45000", "A3: Beans    B3: 38000"]},
+      {"t": "warn", "x": "Do not type the naira sign into number cells. Type 45000 and format the column as currency later."},
+      {"t": "vid", "title": "Typing and formatting data in a sheet", "searchQuery": "Google Sheets enter data and format numbers beginner"},
+      {"t": "h", "x": "Practice"},
+      {"t": "p", "x": "Create a sheet with five items you bought this week and their prices. Put the names in column A and the prices in column B. Then write down the address of the most expensive item."},
+      {"t": "quiz", "questions": [{"q": "Which is the address of the cell in column C, row 5?", "options": ["5C", "C5", "C-5"], "answer": 1}]},
+      {"t": "vid", "title": "Common beginner mistakes in spreadsheets", "searchQuery": "spreadsheet mistakes beginners make"}
+    ]
+  }]
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TAMP course package v1 (tamp.course.v1)",
+  "description": "What the student site and admin exchange. The AI produces tamp.outline.v1, tamp.topics.v1 and tamp.exam.v1 batches; the admin merges them into this package.",
+  "type": "object",
+  "required": ["schema","id","title","category","summary","audience","price","skills","cohort","levels","exam"],
+  "properties": {
+    "schema": {"const": "tamp.course.v1"},
+    "id": {"type": "string", "pattern": "^[a-z0-9-]{3,40}$"},
+    "title": {"type": "string"}, "category": {"type": "string"}, "summary": {"type": "string"}, "audience": {"type": "string"},
+    "price": {"type": "number", "minimum": 0},
+    "skills": {"type": "array", "minItems": 3, "items": {"type": "string"}},
+    "cohort": {"type": "object", "required": ["start"], "properties": {"start": {"type": "string", "format": "date"}, "seats": {"type": "integer"}}},
+    "status": {"enum": ["draft", "published"]},
+    "levels": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "object", "required": ["name","assignment","topics"], "properties": {
+      "name": {"enum": ["Beginner","Intermediate","Advanced"]},
+      "assignment": {"type": "object", "required": ["title","brief","tasks"], "properties": {"title": {"type": "string"}, "brief": {"type": "string"}, "tasks": {"type": "array", "minItems": 3, "items": {"type": "string"}}}},
+      "topics": {"type": "array", "minItems": 21, "maxItems": 21, "items": {"type": "object", "required": ["n","title","minutes","blocks"], "properties": {
+        "n": {"type": "integer", "minimum": 1, "maximum": 63}, "title": {"type": "string"}, "objectives": {"type": "array", "items": {"type": "string"}}, "minutes": {"const": 50},
+        "blocks": {"type": "array", "items": {"oneOf": [
+          {"properties": {"t": {"enum": ["h","p","tip","warn","note"]}, "x": {"type": "string"}}, "required": ["t","x"]},
+          {"properties": {"t": {"const": "code"}, "lang": {"type": "string"}, "lines": {"type": "array", "items": {"type": "string"}}}, "required": ["t","lines"]},
+          {"properties": {"t": {"const": "quiz"}, "questions": {"type": "array", "items": {"type": "object", "required": ["q","options","answer"], "properties": {"q": {"type": "string"}, "options": {"type": "array", "minItems": 2, "items": {"type": "string"}}, "answer": {"type": "integer", "minimum": 0}}}}}, "required": ["t","questions"]},
+          {"properties": {"t": {"const": "vid"}, "title": {"type": "string"}, "searchQuery": {"type": "string"}, "youtubeId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{11}$"}}, "required": ["t"]}
+        ]}}}}}}}},
+    "exam": {"type": "object", "required": ["minutes","pass","questions"], "properties": {"minutes": {"type": "integer"}, "pass": {"type": "integer"}, "questions": {"type": "array", "minItems": 10, "items": {"type": "object", "required": ["q","options","answer"], "properties": {"q": {"type": "string"}, "options": {"type": "array", "minItems": 2, "items": {"type": "string"}}, "answer": {"type": "integer", "minimum": 0}, "topic": {"type": "integer"}}}}}},
+    "meta": {"type": "object", "properties": {"generatedBy": {"type": "string"}, "model": {"type": "string"}, "generatedAt": {"type": "string"}, "reviewedBy": {"type": "string"}}}
+  }
+}
