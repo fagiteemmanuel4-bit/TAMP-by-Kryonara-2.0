@@ -417,4 +417,6 @@ app.use((error, req, res, next) => {
   return res.status(500).json({ message: 'An unexpected server error occurred.' })
 })
 
-app.listen(PORT, () => console.log(`TAMP API listening on port ${PORT}; storage=${isSupabaseConfigured ? 'persistent' : 'development-memory'}`))
+if (!process.env.VERCEL) app.listen(PORT, () => console.log(`TAMP API listening on port ${PORT}; storage=${isSupabaseConfigured ? 'persistent' : 'development-memory'}`))
+
+export default app
