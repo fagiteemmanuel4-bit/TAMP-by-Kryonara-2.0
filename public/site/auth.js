@@ -6,7 +6,7 @@ const R={name:v=>/^\S{2,}(\s+\S{2,})+$/.test(v.trim())||'Enter your first and la
 email:v=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim())||'Enter a valid email, like name@example.com.',
 phone:v=>/^\+?\d{10,15}$/.test(v.replace(/[\s-]/g,''))||'Enter a valid phone number with country code.',
 nin:v=>/^\d{11}$/.test(v)||'Your NIN is exactly 11 digits.',
-pw:v=>(v.length>=8&&/\d/.test(v)&&/[a-z]/i.test(v))||'Use at least 8 characters, with letters and a number.',
+pw:v=>(v.length>=10&&v.length<=128&&/\d/.test(v)&&/[a-z]/i.test(v))||'Use 10–128 characters, with at least one letter and one number.',
 pwl:v=>!!v||'Enter your password.',code:v=>/^\d{6}$/.test(v)||'Enter the 6-digit code.',ok:(v,e)=>e.checked||'Please accept to continue.'};
 const chk=e=>{const x=R[e.dataset.r](e.value,e),bad=x!==true,fe=e.closest('label').querySelector('.fe');fe.textContent=bad?x:'';e.setAttribute('aria-invalid',bad);return!bad};
 const all=f=>{let first=null;f.querySelectorAll('[data-r]').forEach(e=>{if(!chk(e)&&!first)first=e});if(first)first.focus();return!first};
@@ -46,7 +46,7 @@ f.onsubmit=async ev=>{
   try{
     const result=await apiRequest('/auth/register',{
       name:d.name.trim(),email:em,phone:d.phone.replace(/[\s-]/g,''),country:d.country,
-      nin:d.nin,password:d.pw,acceptedTerms:d.ok==='on'
+      password:d.pw,acceptedTerms:d.ok==='on'
     });
     set(S,{name:d.name.trim(),email:em,phone:d.phone.replace(/[\s-]/g,''),country:d.country});
     M(result.message||'Verification email sent. Check your inbox and spam folder.');
@@ -55,7 +55,7 @@ f.onsubmit=async ev=>{
 };
 }
 if(pg==='verify'){
-const p=get(S,null);let tries=0,t;
+const p=get(S,null);let tries=0;
 if(!p){$('#vw').innerHTML='<h1>Nothing to verify yet</h1><p class="mute">Start by creating your account.</p><a class="btn" href="signup.html">Create account</a>'}
 else{
   $('#sub').textContent='Enter the 6-digit code sent to '+p.email+'. Phone verification is not enabled yet.';
