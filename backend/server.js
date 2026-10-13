@@ -284,18 +284,27 @@ app.get('/api/health', async (req, res) => {
     try {
       const { error } = await getSupabaseClient().from('tamp_users').select('id', { count: 'exact', head: true }).limit(1)
       databaseConnected = !error
-      if (error) databaseErrorCode = error.code || 'DATABASE_QUERY_FAILED'
+      if (error) {
+        databaseErrorCode = error.status
+          ? `DATABASE_HTTP_${error.status}`
+          : (error.code || 'DATABASE_QUERY_FAILED')
+      }
     } catch (error) {
-      databaseErrorCode = error?.code || 'DATABASE_QUERY_FAILED'
+      databaseErrorCode = error?.name === 'TypeError'
+        ? 'DATABASE_NETWORK_ERROR'
+        : (error?.status ? `DATABASE_HTTP_${error.status}` : (error?.code || 'DATABASE_QUERY_FAILED'))
     }
+  } else {
+    databaseErrorCode = 'DATABASE_NOT_CONFIGURED'
   }
   const emailConfigured = Boolean(process.env.EMAILJS_SERVICE_ID &&
     (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
     (process.env.EMAILJS_RESET_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
     process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY)
   const authReady = Boolean(JWT_SECRET && databaseConnected && (!isProduction || allowedOrigins.length > 0))
-  return res.json({
-    ok: true,
+  const ok = Boolean(authReady && emailConfigured)
+  return res.status(ok ? 200 : 503).json({
+    ok,
     service: 'tamp-api',
     storage: databaseConnected ? 'persistent' : (isSupabaseConfigured ? 'unavailable' : 'unconfigured'),
     databaseConnected,
