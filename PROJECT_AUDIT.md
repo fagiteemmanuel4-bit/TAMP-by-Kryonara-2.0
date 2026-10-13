@@ -46,7 +46,7 @@ Changes made in the hardening pass:
 | Email | EmailJS REST API | Provider integration is now explicit, but requires backend secrets, correct template variables and a live test. |
 | Hosting | Vercel frontend and same-origin API function | The API route is deployed. Authentication is not operational until the private Supabase service-role key and EmailJS credentials are configured. |
 | Payments | No verified payment-gateway implementation in the backend | Payment and enrollment records are still prototype behaviour. |
-| Testing/CI | Frontend build/lint scripts; no backend test script or visible API test suite | Changes can reach deployment without proving critical journeys. |
+| Testing/CI | GitHub Actions: Vite production build, browser/backend syntax checks, and Node API smoke tests | Core startup/routing/fail-closed behaviours are covered; full authenticated integration tests still require configured Supabase and EmailJS credentials. |
 
 ### Intended business flow versus implemented flow
 
