@@ -8,21 +8,22 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
-<body><div class="maintenance-banner" role="status"><strong>Site maintenance in progress</strong><span>TAMP is undergoing major fixes. More features and services will return online soon. Email verification is temporarily unavailable.</span></div><noscript><div style="background:#F2B632;color:#14202B;padding:12px 16px;text-align:center;font-family:sans-serif">JavaScript is turned off. TAMP needs it to work. Please turn it on and reload this page.</div></noscript>
+<body><noscript><div style="background:#F2B632;color:#14202B;padding:12px 16px;text-align:center;font-family:sans-serif">JavaScript is turned off. TAMP needs it to work. Please turn it on and reload this page.</div></noscript>
 <div class="strip" role="status">Next cohort starts October 26, 2026. <b id="cd"></b></div>
-<header><div class="bar"><a class="logo" href="#top">TAMP<small>by Kryonara</small></a>
-<nav class="links" aria-label="Main"><a href="#how">How it works</a><a href="#courses">Courses</a><a href="#certificate">Certificate</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="login.html">Log in</a><a class="btn s" href="signup.html">Create account</a></nav></div></header>
+<header><div class="bar"><a class="logo" href="#top" aria-label="TAMP by Kryonara home"><span class="logo-mark">T</span><span class="logo-word">TAMP<small>by Kryonara</small></span></a>
+<nav class="links" aria-label="Main"><a href="#how">How it works</a><a href="#courses">Courses</a><a href="#certificate">Certificates</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></nav><div class="nav-actions"><a class="login-link" href="login.html">Log in</a><a class="btn nav-create" href="signup.html">Create account <span aria-hidden="true">↗</span></a><button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" id="menuToggle"><span></span><span></span></button></div></div></header>
 
 <main id="top">
-<div class="wrap">
+<div class="hero-stage">
+<div class="wrap hero-wrap">
 <div class="hero">
-<div><h1>No skills yet? Learn one in 9 weeks and prove it.</h1>
-<p class="lead">TAMP by Kryonara runs short, structured courses for people who want remote work but are starting from zero. Finish a course, pass the exam, and get a certificate any employer can verify online.</p>
-<div class="cta"><a class="btn" href="signup.html">Create your account</a><button class="btn g" id="vbtn" type="button">See how it works</button></div></div>
-<div class="imgslot"><img src="certificate.jpg" alt="Sample TAMP certificate" hidden onload="this.hidden=false;this.nextElementSibling.hidden=true"><span>Certificate image goes here.<br>Add certificate.jpg to this folder.</span></div>
+<div class="hero-copy"><div class="eyebrow"><span class="eyebrow-dot"></span> CAREER SKILLS, BUILT FROM ZERO <span class="eyebrow-line"></span></div><h1>No skill yet? <span>Learn one in 9 weeks</span> and prove it.</h1>
+<p class="lead">Build practical, job-ready skills with a clear learning path, real assignments, and a certificate employers can verify online.</p>
+<div class="cta"><a class="btn hero-primary" href="signup.html">Create your account <span aria-hidden="true">↗</span></a><button class="btn g hero-secondary" id="vbtn" type="button"><span class="play-icon" aria-hidden="true">▶</span> See how it works</button></div><div class="hero-proof"><span class="proof-check">✓</span> Beginner-friendly <i></i><span class="proof-check">✓</span> Practical learning <i></i><span class="proof-check">✓</span> Verifiable certificate</div></div>
+<div class="student-visual" aria-label="Student portrait area"><div class="visual-stripes"></div><div class="visual-glow"></div><div class="visual-card visual-card-top"><span class="mini-check">✓</span><span><b>Learn with confidence</b><small>One step at a time</small></span></div><div class="student-frame"><img src="student.jpg" alt="TAMP student" onload="this.classList.add('loaded')" onerror="this.style.display='none'"><div class="student-placeholder" aria-hidden="true"><div class="placeholder-halo"></div><div class="placeholder-head"></div><div class="placeholder-neck"></div><div class="placeholder-body"></div><span>YOUR STUDENT PHOTO</span></div></div><div class="visual-card visual-card-bottom"><span class="certificate-mini">✦</span><span><b>Skills that move you forward</b><small>Learn · Practice · Prove it</small></span></div><div class="visual-caption">TAMP BY KRYONARA <span>LEARN WITH PURPOSE.</span></div></div>
 </div>
 <div class="stats"><div><b>9</b><span>weeks per course</span></div><div><b>63</b><span>daily lessons</span></div><div><b>3</b><span>levels, beginner to advanced</span></div><div><b>₦2,000</b><span>to enroll</span></div></div>
-</div>
+</div></div>
 
 <section><div class="wrap two"><div><h2>Want a remote job, but have no skills yet?</h2><p class="lead2" style="margin:0">Most beginners don't know where to start, and certificates from unknown sources are hard to trust. TAMP fixes both.</p></div>
 <ul><li><b>A real skill:</b> one topic a day, from beginner to advanced</li><li><b>Proof that holds up:</b> a certificate with a unique ID that anyone can check</li><li><b>A portfolio project:</b> reviewed by a person, not a machine</li></ul></div></section>
@@ -79,6 +80,6 @@
 <div class="sticky"><a class="btn" href="signup.html">Enroll for ₦2,000</a></div>
 <div id="ck" role="dialog" aria-label="Cookie notice"><span>We use cookies to make this site work and to see which pages help.</span><button class="btn s" id="ok">Accept</button></div>
 
-<script src="states.js"></script><script src="protect.js"></script><script src="landing.js"></script>
+<script src="states.js"></script><script src="protect.js"></script><script src="landing.js"></script><script>const mt=document.getElementById("menuToggle");if(mt){mt.addEventListener("click",()=>{const nav=document.querySelector(".links");const open=mt.getAttribute("aria-expanded")==="true";mt.setAttribute("aria-expanded",String(!open));nav.classList.toggle("menu-open",!open);});document.querySelectorAll(".links a").forEach(a=>a.addEventListener("click",()=>{mt.setAttribute("aria-expanded","false");document.querySelector(".links").classList.remove("menu-open")}));}</script>
 </body>
 </html>
