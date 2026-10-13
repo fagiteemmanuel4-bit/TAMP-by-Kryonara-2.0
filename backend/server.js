@@ -277,7 +277,33 @@ async function requireAdmin(req, res, next) {
   } catch (error) { next(error) }
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tamp-api', storage: isSupabaseConfigured ? 'persistent' : 'unconfigured', authReady: Boolean(JWT_SECRET && isSupabaseConfigured && (!isProduction || allowedOrigins.length > 0)), emailConfigured: Boolean(process.env.EMAILJS_SERVICE_ID && (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) && (process.env.EMAILJS_RESET_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) && process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY) }))
+app.get('/api/health', async (req, res) => {
+  let databaseConnected = false
+  let databaseErrorCode = null
+  if (isSupabaseConfigured) {
+    try {
+      const { error } = await getSupabaseClient().from('tamp_users').select('id', { count: 'exact', head: true }).limit(1)
+      databaseConnected = !error
+      if (error) databaseErrorCode = error.code || 'DATABASE_QUERY_FAILED'
+    } catch (error) {
+      databaseErrorCode = error?.code || 'DATABASE_QUERY_FAILED'
+    }
+  }
+  const emailConfigured = Boolean(process.env.EMAILJS_SERVICE_ID &&
+    (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
+    (process.env.EMAILJS_RESET_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
+    process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY)
+  const authReady = Boolean(JWT_SECRET && databaseConnected && (!isProduction || allowedOrigins.length > 0))
+  return res.json({
+    ok: true,
+    service: 'tamp-api',
+    storage: databaseConnected ? 'persistent' : (isSupabaseConfigured ? 'unavailable' : 'unconfigured'),
+    databaseConnected,
+    databaseErrorCode,
+    authReady,
+    emailConfigured,
+  })
+})
 
 app.post('/api/auth/register', async (req, res, next) => {
   try {
