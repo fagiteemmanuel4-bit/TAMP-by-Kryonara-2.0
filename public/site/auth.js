@@ -12,25 +12,79 @@ const chk=e=>{const x=R[e.dataset.r](e.value,e),bad=x!==true,fe=e.closest('label
 const all=f=>{let first=null;f.querySelectorAll('[data-r]').forEach(e=>{if(!chk(e)&&!first)first=e});if(first)first.focus();return!first};
 const M=t=>{$('#m').textContent=t||''};
 const busy=on=>{const b=$('#go');b.dataset.t=b.dataset.t||b.textContent;b.disabled=on;b.classList.toggle('is-loading',!!on);b.textContent=on?'Please wait...':b.dataset.t};
-const f=$('#f');
+const apiBase=()=>String(window.TAMP_CONFIG?.apiBase||'').replace(/\/$/,'');
+async function apiRequest(path,body){
+  const base=apiBase();
+  if(!base)throw new Error('The authentication API is not connected. Deploy the TAMP backend, then set TAMP_CONFIG.apiBase in /site/config.js to its URL ending in /api.');
+  let response;
+  try{
+    response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }catch(e){
+    throw new Error('TAMP could not reach the authentication server. Check the backend deployment URL and CORS settings.');
+  }
+  let data={};
+  try{data=await response.json()}catch(e){}
+  if(!response.ok)throw new Error(data.message||'The request failed. Please try again.');
+  return data;
+}
+const rememberUser=(user,token)=>{
+  const users=get(K,[]).filter(u=>u.email!==user.email);
+  users.push({id:user.id,name:user.name,email:user.email,role:user.role||'student'});
+  set(K,users);
+  set(SES,{email:user.email,name:user.name});
+  try{sessionStorage.setItem('tamp_access_token',token)}catch(e){}
+};
+\nconst f=$('#f');
 if(f)f.querySelectorAll('[data-r]').forEach(e=>{e.addEventListener('blur',()=>chk(e));e.addEventListener('input',()=>e.getAttribute('aria-invalid')==='true'&&chk(e))});
 document.querySelectorAll('.eye').forEach(b=>b.onclick=()=>{const i=b.previousElementSibling,s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'Hide':'Show';b.setAttribute('aria-label',s?'Hide password':'Show password')});
 const done=n=>{document.querySelectorAll('.prog li').forEach(l=>l.className='dn');$('#nm').textContent=n.split(' ')[0]};
-if(pg==='signup'){const ses=get(SES,null);
-f.onsubmit=async ev=>{ev.preventDefault();M();if(!all(f))return;const d=Object.fromEntries(new FormData(f)),em=d.email.trim().toLowerCase();
-if(get(K,[]).some(u=>u.email===em))return M('That email already has an account. Log in instead.');
-busy(true);set(S,{name:d.name.trim(),email:em,phone:d.phone.replace(/[\s-]/g,''),country:d.country,nin:'*******'+d.nin.slice(-4),pw:await hash(d.pw),terms:new Date().toISOString()});location.href='verify.html'}}
-if(pg==='verify'){const p=get(S,null);let tries=0,t;
+if(pg==='signup'){
+f.onsubmit=async ev=>{
+  ev.preventDefault();M();if(!all(f))return;
+  const d=Object.fromEntries(new FormData(f)),em=d.email.trim().toLowerCase();
+  busy(true);
+  try{
+    const result=await apiRequest('/auth/register',{
+      name:d.name.trim(),email:em,phone:d.phone.replace(/[\\s-]/g,''),country:d.country,
+      nin:d.nin,password:d.pw,acceptedTerms:d.ok==='on'
+    });
+    set(S,{name:d.name.trim(),email:em,phone:d.phone.replace(/[\\s-]/g,''),country:d.country});
+    M(result.message||'Verification email sent. Check your inbox and spam folder.');
+    location.href='verify.html';
+  }catch(error){M(error.message);busy(false)}
+};
+}
+if(pg==='verify'){
+const p=get(S,null);let tries=0,t;
 if(!p){$('#vw').innerHTML='<h1>Nothing to verify yet</h1><p class="mute">Start by creating your account.</p><a class="btn" href="signup.html">Create account</a>'}
-else{$('#sub').textContent='We sent codes to '+p.email.replace(/^(.).*(@.*)$/,'$1***$2')+' and '+p.phone.slice(0,-4).replace(/\d/g,'*')+p.phone.slice(-4)+'.';
-const tick=()=>{let n=30;const r=$('#rs');r.disabled=true;clearInterval(t);r.textContent='Resend codes in 30s';t=setInterval(()=>{n--;r.textContent='Resend codes in '+n+'s';if(n<=0){clearInterval(t);r.disabled=false;r.textContent='Resend codes'}},1000)};tick();
-$('#rs').onclick=()=>{tries=0;M('New codes sent (demo: 123456).');tick()};
-f.onsubmit=ev=>{ev.preventDefault();M();if(!all(f))return;if(tries>=5)return M('Too many wrong attempts. Resend the codes to try again.');
-const d=Object.fromEntries(new FormData(f));if(d.a!=='123456'||d.b!=='123456'){tries++;return M('One of the codes is wrong. '+(5-tries)+' attempts left.')}
-const us=get(K,[]);us.push({...p,id:Date.now()});set(K,us);set(SES,{email:p.email,name:p.name});try{localStorage.removeItem(S)}catch(e){}
-$('#vw').hidden=true;$('#dw').hidden=false;done(p.name);setTimeout(()=>location.href='dashboard.html',1800)}}}
-if(pg==='login'){let n=0;
-f.onsubmit=async ev=>{ev.preventDefault();M();if(!all(f))return;if(n>=5)return M('Too many attempts. Wait a minute and try again.');
-const d=Object.fromEntries(new FormData(f)),u=get(K,[]).find(x=>x.email===d.email.trim().toLowerCase());busy(true);
-if(!u||u.pw!==await hash(d.pw)){busy(false);if(++n>=5)setTimeout(()=>n=0,60000);return M('Email or password is incorrect.')}
-if(u.suspended){busy(false);return M('This account is suspended. Please contact support.')}set(SES,{email:u.email,name:u.name});f.hidden=true;$('#hd').hidden=true;$('#dw').hidden=false;$('#nm').textContent=u.name.split(' ')[0];setTimeout(()=>location.href='dashboard.html',1200)};}
+else{
+  $('#sub').textContent='Enter the 6-digit code sent to '+p.email+'. Phone verification is not enabled yet.';
+  const resend=$('#rs');if(resend){resend.disabled=true;resend.textContent='Email code sent';}
+  f.onsubmit=async ev=>{
+    ev.preventDefault();M();if(!all(f))return;
+    if(tries>=5)return M('Too many attempts. Please restart registration.');
+    const d=Object.fromEntries(new FormData(f));busy(true);
+    try{
+      const result=await apiRequest('/auth/verify',{email:p.email,emailCode:d.a});
+      rememberUser(result.user,result.token);
+      try{localStorage.removeItem(S)}catch(e){}
+      $('#vw').hidden=true;$('#dw').hidden=false;done(result.user.name);
+      setTimeout(()=>location.href='dashboard.html',900);
+    }catch(error){tries++;M(error.message);busy(false)}
+  };
+}
+}
+if(pg==='login'){
+let n=0;
+f.onsubmit=async ev=>{
+  ev.preventDefault();M();if(!all(f))return;
+  if(n>=5)return M('Too many attempts. Wait a minute and try again.');
+  const d=Object.fromEntries(new FormData(f));busy(true);
+  try{
+    const result=await apiRequest('/auth/login',{email:d.email.trim().toLowerCase(),password:d.pw});
+    rememberUser(result.user,result.token);
+    f.hidden=true;$('#hd').hidden=true;$('#dw').hidden=false;$('#nm').textContent=result.user.name.split(' ')[0];
+    setTimeout(()=>location.href='dashboard.html',900);
+  }catch(error){busy(false);if(++n>=5)setTimeout(()=>n=0,60000);M(error.message)}
+};
+}
