@@ -34,7 +34,8 @@ const rememberUser=(user,token)=>{
   set(SES,{email:user.email,name:user.name});
   try{sessionStorage.setItem('tamp_access_token',token)}catch(e){}
 };
-\nconst f=$('#f');
+
+const f=$('#f');
 if(f)f.querySelectorAll('[data-r]').forEach(e=>{e.addEventListener('blur',()=>chk(e));e.addEventListener('input',()=>e.getAttribute('aria-invalid')==='true'&&chk(e))});
 document.querySelectorAll('.eye').forEach(b=>b.onclick=()=>{const i=b.previousElementSibling,s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'Hide':'Show';b.setAttribute('aria-label',s?'Hide password':'Show password')});
 const done=n=>{document.querySelectorAll('.prog li').forEach(l=>l.className='dn');$('#nm').textContent=n.split(' ')[0]};
