@@ -11,13 +11,15 @@ The immediate EmailJS failure had two code-level causes:
 1. The live static sign-up/login pages used localStorage and a hard-coded demo verification code instead of calling the backend.
 2. The backend swallowed EmailJS delivery errors and still returned a successful “code sent” response.
 
-Changes made during this pass:
-- EmailJS now fails clearly when required environment values are missing, has a 10-second timeout, and returns provider errors to the backend.
-- Registration no longer reports success when EmailJS delivery fails.
-- Email verification codes expire after 10 minutes and incorrect attempts are capped at five.
-- Sign-up, email verification, and login pages now call the backend API; the fake phone-code requirement and demo verification code were removed.
-- Admin login and existing admin endpoints now check stored roles. Production startup now requires `JWT_SECRET` and an `ALLOWED_ORIGINS` allowlist.
-- The backend URL is intentionally a required deployment setting in `public/site/config.js`. It is blank right now because no deployed API URL is present in the repo. **Live authentication cannot work until the backend is deployed, its environment variables are configured, and that URL is entered.**
+Changes made in the hardening pass:
+- Sign-up, email verification, resend-code, login, password recovery and account deletion are wired to the same-origin API.
+- EmailJS supports separate verification and password-reset templates, reports failures, and times out after 10 seconds.
+- Verification codes are cryptographically random, stored hashed, expire after 10 minutes and have a five-attempt cap. Password reset tokens are cryptographically random, stored hashed, single-use and expire after 30 minutes.
+- Authentication records, pending registrations and password reset tokens use Supabase tables; production auth fails closed when the database/JWT configuration is missing.
+- JWTs expire after two hours; changing a password increments the session version so older tokens are rejected.
+- Admin demo sign-in and fake vendor/certificate-verification claims are disabled. Enrollment is rejected until payment/key validation exists.
+- A Vercel catch-all API function is deployed at `/api/*`; the frontend uses `/api`. Production JWT secret and Supabase URL are configured, but the Supabase service-role key and EmailJS credentials still need to be supplied.
+- The authentication schema and a Supabase security grant revocation have been applied to the connected `TAMP by Kryonara` project. GitHub Actions now checks the Vite build and JavaScript syntax.
 
 ## Current structure, architecture and stack
 
@@ -27,7 +29,7 @@ Changes made during this pass:
 - `public/site/`: the actual student-facing product today — static HTML, CSS and large vanilla-JavaScript files for signup, dashboard, learning, marketing and policy pages.
 - `public/admin/`: a separate static admin prototype with its own UI, seed data and localStorage database.
 - `backend/`: Express API, Supabase client and EmailJS service.
-- `vercel.json`: frontend SPA rewrite rules; it does not itself run the Express server.
+- `api/[...slug].js` and `vercel.json`: same-origin Vercel serverless API route; the Express app is exported for serverless execution.
 - `PROJECT_AUDIT.md`: this audit and remediation record.
 
 ### Technology stack actually present
@@ -41,7 +43,7 @@ Changes made during this pass:
 | Database | Supabase JS client | Used for a user table only in current backend logic; no checked-in migrations or complete learning/business schema. |
 | Password/JWT | bcryptjs + jsonwebtoken | Password hashing exists; authorization, secret management and session design need hardening. |
 | Email | EmailJS REST API | Provider integration is now explicit, but requires backend secrets, correct template variables and a live test. |
-| Hosting | Vercel frontend; backend intended for a Node host | The repository currently has no working in-repo API deployment route and no configured backend URL. |
+| Hosting | Vercel frontend and same-origin API function | The API route is deployed. Authentication is not operational until the private Supabase service-role key and EmailJS credentials are configured. |
 | Payments | No verified payment-gateway implementation in the backend | Payment and enrollment records are still prototype behaviour. |
 | Testing/CI | Frontend build/lint scripts; no backend test script or visible API test suite | Changes can reach deployment without proving critical journeys. |
 
@@ -55,45 +57,43 @@ The implementation is currently split: the UI describes much of that flow, but s
 
 ### Critical — fix before accepting real students or payments
 
-#### 1. Frontend/backend are not yet deployed as one connected system
-- The React entry point in `src/App.jsx` mostly renders the older HTML application inside an iframe.
-- The newer React modules under `src/modules/site` and `src/modules/admin` contain placeholder/demo content and are not the actual routed product.
-- The static student pages previously handled signup/login through localStorage. They now call the backend, but `public/site/config.js` needs the real backend URL ending in `/api`.
-- Root `vercel.json` only configures SPA rewrites; it does not deploy the Express service in `backend/server.js` as a working API.
-- Result: frontend and backend can be deployed independently and silently point at the wrong place. Maintain one documented API base URL and verify it in the production build.
+#### 1. Split UI architecture remains a maintainability risk; API routing is now connected
+- The React entry point in `src/App.jsx` mostly frames the legacy HTML application inside an iframe; the newer React modules are not the real routed product.
+- The root Vercel project now deploys `api/[...slug].js`, which forwards requests to the Express app. Student pages use same-origin `/api`; local Vite development proxies `/api` to port 5000.
+- The deployment is build-ready, but runtime authentication remains gated by missing Supabase service-role and EmailJS credentials.
+- Consolidate to one routing approach later; do not undertake a visual rewrite until the real data model and API contract are stable.
 
-#### 2. Admin privilege escalation
-- `POST /api/admin/auth/login` accepts any account with a valid email/password and issues a token with role `admin`; it does not first require that the stored account is an administrator.
-- `GET /api/admin/overview` and `GET /api/admin/students` use `requireAuth` but do not enforce an admin role.
-- The `/ADMIN19841812` route is not a security boundary; a hard-to-guess URL is not authentication.
-- Result: a normal student may be able to obtain admin access or call admin endpoints. Implement server-side role checks on every admin route, deny by default, and add admin MFA before launch.
+#### 2. Admin privilege escalation — backend guard added; admin UI safely disabled
+- Admin login requires a stored `admin` or `super` role, and existing admin overview/student endpoints re-check the stored role.
+- The local seeded admin dashboard and the `admin123` demo credential have been disabled so local sample records cannot be mistaken for production data.
+- Remaining work: build a real backend-backed admin UI, provision the first super-admin through a controlled process, add MFA and test every admin endpoint with student and admin tokens.
+- The `/ADMIN19841812` route is not a security boundary by itself.
 
-#### 3. Learning, payment and enrollment decisions are client-side or simulated
-- `POST /api/enrollments` returns an active enrollment without validating a paid transaction or a single-use course key.
-- Student progress, assignments, payments, notes, certificates, and much of the admin state are stored in localStorage.
-- The public certificate verification flow checks local browser storage and contains a demo certificate ID; it is not a trustworthy public verification service.
-- Course locking, timers, quiz flow and certificate issuance must be enforced by the server, not only JavaScript.
-- Result: users can lose data, alter local records, bypass access rules, or be shown fabricated payment/enrollment/certificate states.
+#### 3. Learning, payments and certificates are not production-complete
+- The enrollment API now returns HTTP 501 rather than falsely activating a student; real payment/key validation and single-use redemption still need to be built.
+- Student progress, assignments, notes, grades and certificates remain largely browser-local.
+- Certificate verification no longer accepts the demo ID or localStorage records; it clearly states that the official registry is not connected.
+- Vendor key generation and sales UI is disabled until a real key inventory, payment and payout backend exists.
+- Build server-enforced course access, progress, assessment grading, assignment storage and certificate issuance before enrolling paying students.
 
-#### 4. Persistent storage and serverless compatibility are unresolved
-- Verification codes, pending registrations, reset tokens, and fallback users are held in process memory in `backend/server.js`.
-- A restart, redeploy, or serverless instance change can lose pending registrations or make reset links unusable. A serverless deployment is particularly unsuitable for this stateful design.
-- Supabase failures fall back to in-memory storage, which can make the application appear to accept records that will disappear later.
-- Result: registration/login can become intermittent and real student records can be lost. Persist pending registrations, one-time codes, reset tokens, enrollments and audit events in Supabase/Postgres; fail closed on database errors in production.
+#### 4. Authentication persistence is schema-backed; the production credential is still missing
+- Users, pending registrations, and password reset tokens now use the `tamp_users`, `tamp_pending_registrations`, and `tamp_password_resets` Supabase tables.
+- The connected `TAMP by Kryonara` Supabase project has these tables with RLS enabled and no browser-role policies; the backend must use the private service-role key.
+- In-memory fallback is development-only. Production auth endpoints fail closed when the Supabase service-role key or JWT configuration is missing.
+- Learning records, payments, keys and certificates still need their own persistent schema.
 
 ### High — fix before launch
 
-#### 5. EmailJS delivery depends on provider configuration and template variables
-- Backend requires `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, and `EMAILJS_PRIVATE_KEY`.
-- The EmailJS template must send to the `to_email` variable and render the `code` variable. A wrong service/template ID, disabled service, unapproved recipient, or mismatched template variable will still cause provider rejection.
-- The API URL must be configured in `public/site/config.js`; EmailJS secrets belong only in backend environment variables, never in browser JavaScript.
-- The current code review cannot confirm the actual EmailJS dashboard settings or production secrets. After configuring them, test a real signup to an inbox and check backend logs for provider errors.
+#### 5. EmailJS still needs credentials and a real inbox test
+- Backend supports `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`, `EMAILJS_VERIFICATION_TEMPLATE_ID`, and `EMAILJS_RESET_TEMPLATE_ID` (with a shared-template fallback).
+- Verification template variables are `to_email` and `code`; reset template variables are `to_email` and `reset_url`.
+- The Vercel environment variable records exist but the connected values are not configured/available to the application yet. Do not place private keys in frontend files.
+- A live email has not been confirmed; send a real test after the service/template credentials are added.
 
-#### 6. Password-reset flow is not connected end-to-end
-- The public forgot/reset flow in `public/site/site.js` still creates localStorage tokens and explicitly labels the reset link as a demo; it does not call the backend EmailJS reset endpoint.
-- The backend builds a reset URL using `/reset-password?token=...`, while the static page is `/site/reset-password.html?t=...`; those URL formats do not match.
-- Backend reset tokens are in memory and the reset handler does not revoke existing sessions.
-- Result: password recovery can claim to work without delivering an email or changing the actual backend password. Connect the UI to the API, unify the reset URL, persist hashed/single-use tokens, and revoke sessions after a reset.
+#### 6. Password recovery is now connected; end-to-end email verification remains outstanding
+- Forgot/reset pages call the backend and use the correct `/site/reset-password.html?t=...` route.
+- Reset tokens are stored hashed, expire after 30 minutes, are consumed once, and password changes invalidate prior JWTs through a session version.
+- Email delivery and the actual link still require working EmailJS credentials and a real inbox test.
 
 #### 7. Weak production security controls — some guardrails added
 - This pass changed CORS to use the `ALLOWED_ORIGINS` allowlist and made production startup fail if the allowlist or `JWT_SECRET` is missing. Set both values in the backend host before deploying; `ALLOWED_ORIGINS` must include the exact frontend origin.
@@ -102,15 +102,16 @@ The implementation is currently split: the UI describes much of that flow, but s
 - There are no visible automated security tests, API tests, or dependency audit gates.
 - Before launch: use cryptographic randomness, add rate limiting/lockout, set security headers, and add automated tests and dependency scanning.
 
-#### 8. No database migration or access-policy files are included
-- Source references a Supabase `users` table and writes profile/password fields, but this repository tree has no versioned schema migration or documented production RLS policy.
-- Result: deployments can drift between projects, schema errors can be masked by the in-memory fallback, and access rules cannot be reviewed or reproduced reliably.
-- Add migrations for every table, indexes/unique constraints, RLS policies, and a documented least-privilege service-role strategy. Never expose the service-role key to the frontend.
+#### 8. Authentication migrations and RLS are present; the wider product schema is still missing
+- Versioned migrations now define the three authentication tables, session versioning and terms acceptance. These migrations were applied to the connected `TAMP by Kryonara` Supabase project.
+- RLS is enabled and browser roles have no direct access policies; the service-role key must remain server-only.
+- A separate migration revoked public execution of an existing `SECURITY DEFINER` RLS helper.
+- The course/cohort/enrollment/payment/assessment/submission/certificate/support schema is still to be designed and migrated.
 
-#### 9. Privacy risk around NIN and student records
-- Signup collects a full 11-digit NIN, even though the code only stores its last four digits after verification. No real NIN verification provider is implemented.
-- Collecting national identity data creates a high-impact breach and trust risk. Do not collect it until there is a clear lawful purpose, approved verification flow, retention schedule, access controls and user-facing explanation.
-- Account export/deletion and other privacy-policy commitments are described in handoff documentation but are not fully implemented as backend endpoints.
+#### 9. Privacy and account lifecycle
+- The sign-up form no longer collects NIN; privacy/data-protection copy has been aligned with the current form.
+- Account deletion now authenticates the current password and removes the account, pending registration and password-reset records.
+- Remaining: add data export, retention/deletion rules for future learning/payment/certificate tables, a real privacy contact address and legal review of the Nigeria Data Protection Act obligations.
 
 #### 10. Admin app is still a prototype
 - `public/admin/config.js` has `demo: true` and `demoPassword: 'admin123'`.
