@@ -19,6 +19,7 @@ const allowedOrigins = String(process.env.ALLOWED_ORIGINS || (isProduction ? '' 
   .split(',').map((origin) => origin.trim()).filter(Boolean)
 
 app.disable('x-powered-by')
+app.set('trust proxy', 1)
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
