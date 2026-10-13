@@ -85,10 +85,8 @@ $('#main').addEventListener('change',e=>{if(e.target.id==='fl'){ST[CUR].f=e.targ
 const jump=()=>{const it=flat.filter(x=>can(x[0]));dg.innerHTML='<h2>Jump to</h2><input id="jq" placeholder="Type a section name" aria-label="Search sections"><div class="pl" id="jl"></div>';const L=q=>{$('#jl').innerHTML=it.filter(x=>x[1].toLowerCase().includes(q.toLowerCase())).map((x,i)=>`<a href="#/${x[0]}" class="${i?'':'on'}">${x[1]}</a>`).join('')};L('');$('#jq').oninput=e=>L(e.target.value);$('#jq').onkeydown=e=>{if(e.key==='Enter'){const a=$('#jl a');if(a){location.hash=a.getAttribute('href');dg.close()}}};$('#jl').onclick=()=>dg.close();dg.showModal();$('#jq').focus()};
 $('#kb').onclick=jump;addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&me){e.preventDefault();jump()}});
 $('#mt').onclick=()=>$('#sb').classList.toggle('open');addEventListener('hashchange',route);
-function boot(){if(!me){$('#login').hidden=false;$('#app').hidden=true;$('#dn').textContent=ADMIN_CONFIG.demo?'Demo accounts (password '+ADMIN_CONFIG.demoPassword+'): '+DB.admins.map(a=>a.email+' ('+a.role+')').join(', '):'';return}
+function boot(){if(!me){$('#login').hidden=false;$('#app').hidden=true;$('#dn').textContent='Admin access is temporarily disabled. This dashboard still uses local demo data and is not safe for production operations.';return}
 $('#login').hidden=true;$('#app').hidden=false;$('#who').textContent=me.name+' · '+me.role;route()}
-$('#lf').onsubmit=e=>{e.preventDefault();const f=e.target,em=f.e.value.trim().toLowerCase(),a=DB.admins.find(x=>x.email===em);
-if(!a||a.status!=='active'||f.p.value!==ADMIN_CONFIG.demoPassword){log('Failed sign-in','login',em);save();$('#lm').textContent='Email or password is incorrect.';return}
-me={id:a.id,name:a.name,email:a.email,role:a.role};try{sessionStorage.setItem('ta_me',JSON.stringify(me))}catch(x){}log('Signed in','admins:'+a.id,'');save();f.reset();$('#lm').textContent='';boot()};
+$('#lf').onsubmit=e=>{e.preventDefault();$('#lm').textContent='Admin authentication and persistent admin operations are not connected. Sign-in is disabled so demo data cannot be mistaken for real student, payment or certificate records.';};
 $('#lo').onclick=()=>{log('Signed out','admins:'+me.id,'');save();try{sessionStorage.removeItem('ta_me')}catch(x){}me=null;location.hash='';boot()};
 boot();
