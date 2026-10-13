@@ -15,6 +15,8 @@ create table if not exists public.tamp_users (
   updated_at timestamptz not null default now()
 );
 
+alter table public.tamp_users add column if not exists session_version integer not null default 0;
+
 create index if not exists tamp_users_created_at_idx on public.tamp_users (created_at desc);
 
 create table if not exists public.tamp_pending_registrations (
