@@ -19,6 +19,38 @@ Changes made during this pass:
 - Admin login and existing admin endpoints now check stored roles. Production startup now requires `JWT_SECRET` and an `ALLOWED_ORIGINS` allowlist.
 - The backend URL is intentionally a required deployment setting in `public/site/config.js`. It is blank right now because no deployed API URL is present in the repo. **Live authentication cannot work until the backend is deployed, its environment variables are configured, and that URL is entered.**
 
+## Current structure, architecture and stack
+
+### Repository structure
+
+- `src/`: React/Vite entry shell and a second set of React UI modules.
+- `public/site/`: the actual student-facing product today — static HTML, CSS and large vanilla-JavaScript files for signup, dashboard, learning, marketing and policy pages.
+- `public/admin/`: a separate static admin prototype with its own UI, seed data and localStorage database.
+- `backend/`: Express API, Supabase client and EmailJS service.
+- `vercel.json`: frontend SPA rewrite rules; it does not itself run the Express server.
+- `PROJECT_AUDIT.md`: this audit and remediation record.
+
+### Technology stack actually present
+
+| Layer | Current implementation | Assessment |
+|---|---|---|
+| Frontend shell | React 19, Vite 8, React Router 7 | Works primarily as an iframe router for the legacy site; the newer React modules are not the real product flow. |
+| Student UI | Static HTML/CSS + vanilla JavaScript | Feature-rich prototype, but important state and rules remain client-side. |
+| Admin UI | Static HTML/CSS + vanilla JavaScript | Demo/localStorage state, not production operations software. |
+| API | Node.js + Express 4 | Has basic auth, dashboard and admin routes; deployment model and persistent state need work. |
+| Database | Supabase JS client | Used for a user table only in current backend logic; no checked-in migrations or complete learning/business schema. |
+| Password/JWT | bcryptjs + jsonwebtoken | Password hashing exists; authorization, secret management and session design need hardening. |
+| Email | EmailJS REST API | Provider integration is now explicit, but requires backend secrets, correct template variables and a live test. |
+| Hosting | Vercel frontend; backend intended for a Node host | The repository currently has no working in-repo API deployment route and no configured backend URL. |
+| Payments | No verified payment-gateway implementation in the backend | Payment and enrollment records are still prototype behaviour. |
+| Testing/CI | Frontend build/lint scripts; no backend test script or visible API test suite | Changes can reach deployment without proving critical journeys. |
+
+### Intended business flow versus implemented flow
+
+The documented intended product is: discover a cohort → register → verify email → pay or redeem a course key → study sequential daily lessons → submit assignments and assessments → receive a reviewed certificate → verify the certificate publicly. Admins should manage cohorts, submissions, payments, certificates and support.
+
+The implementation is currently split: the UI describes much of that flow, but signup was local-only, course progress and certificates are browser data, payment is not verified server-side, the admin panel uses seed/localStorage data, and the backend does not yet enforce the complete learning/business lifecycle. Treat these as separate deliverables, not as features already production-complete.
+
 ## Findings by severity
 
 ### Critical — fix before accepting real students or payments
