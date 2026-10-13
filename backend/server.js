@@ -478,7 +478,7 @@ app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res, next)
   try {
     const client = db()
     if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
-    const { count, error } = await client.from('tamp_users').select('id', { count: 'exact', head: true })
+    const { count, error } = await client.from('tamp_users').select('id', { count: 'exact', head: true }).eq('role', 'student')
     if (error) throw error
     return res.json({ students: count || 0, enrollments: null, pendingReview: null, revenue: null, note: 'Enrollment, review and revenue metrics are withheld until their persistent tables are implemented.' })
   } catch (error) { next(error) }
@@ -488,7 +488,7 @@ app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res, next)
   try {
     const client = db()
     if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
-    const { data, error } = await client.from('tamp_users').select('id,name,email,role,created_at').order('created_at', { ascending: false }).limit(500)
+    const { data, error } = await client.from('tamp_users').select('id,name,email,role,created_at').eq('role', 'student').order('created_at', { ascending: false }).limit(500)
     if (error) throw error
     return res.json({ students: (data || []).map((user) => ({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.created_at, status: 'active' })) })
   } catch (error) { next(error) }
