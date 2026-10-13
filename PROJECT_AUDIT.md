@@ -113,16 +113,16 @@ The implementation is currently split: the UI describes much of that flow, but s
 - Account deletion now authenticates the current password and removes the account, pending registration and password-reset records.
 - Remaining: add data export, retention/deletion rules for future learning/payment/certificate tables, a real privacy contact address and legal review of the Nigeria Data Protection Act obligations.
 
-#### 10. Admin app is still a prototype
-- `public/admin/config.js` has `demo: true` and `demoPassword: 'admin123'`.
-- `public/admin/seed.js`, `admin.js`, and `bridge.js` use seeded records and localStorage as the data source.
-- Admin overview metrics are hard-coded in backend routes, and admin changes are not reliably connected to the student backend/database.
-- Do not expose this admin UI to real operational data until authentication, RBAC, audit logging, persistent records and all financial/destructive actions are server-enforced.
+#### 10. Admin app remains a prototype, and demo sign-in is disabled
+- `public/admin/config.js` no longer contains the `admin123` password; the admin login handler refuses demo sign-in.
+- `public/admin/seed.js`, `admin.js`, and `bridge.js` still contain seeded records and localStorage data, so the UI is intentionally disabled rather than presented as a working control center.
+- The backend has role checks for its current admin endpoints, but does not yet implement all admin actions or connect all operations to persistent tables.
+- Build a real backend-backed admin interface with audited roles, MFA, persistent records and server-enforced financial/destructive actions before reopening it.
 
 ### Medium — product reliability and business risks
 
 #### 11. Conflicting course catalogues and hard-coded cohort dates
-- Backend advertises Data Analysis and AI Foundations.
+- Backend now lists only Data Analysis, but other pages and admin seed data still contain additional courses.
 - Student dashboard code has Data Analysis, Virtual Assistance and Digital Marketing with hard-coded prices and dates.
 - Admin seed data contains yet another catalogue and sample cohorts.
 - Admin-published courses are not the source of truth for what students see.
