@@ -282,6 +282,29 @@ app.post('/api/auth/register', async (req, res, next) => {
   }
 })
 
+app.post('/api/auth/resend', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.body?.email)
+    if (!validEmail(email)) return res.status(400).json({ message: 'Enter a valid email address.' })
+    const pending = await getPending(email)
+    if (!pending || Date.now() >= pending.expiresAt) {
+      await updatePending(email, { remove: true })
+      return res.status(400).json({ message: 'Your registration has expired. Please sign up again.' })
+    }
+    const code = generateCode()
+    await savePending(email, code, pending.registration)
+    try {
+      await sendEmailCode({ email, code })
+    } catch (error) {
+      await updatePending(email, { remove: true })
+      console.error('Verification resend failed:', error.message)
+      return res.status(503).json({ message: 'We could not send a new code. Please try signing up again later.' })
+    }
+    return res.json({ success: true, message: 'A new verification code has been sent.', expiresInSeconds: 600 })
+  } catch (error) { next(error) }
+})
+
 app.post('/api/auth/verify', async (req, res, next) => {
   try {
     if (!requirePersistentDb(res)) return
