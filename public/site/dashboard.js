@@ -18,9 +18,7 @@ S.enr=[];S.pay=[];S.certs=[];S.tickets=[];
 const save=()=>put(DK,S),today=()=>new Date().toISOString().slice(0,10),first=me.name.split(' ')[0];
 const days=d=>Math.ceil((new Date(d+'T00:00')-new Date(today()+'T00:00'))/864e5);
 const fd=d=>new Date(d+'T00:00').toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}),cur=n=>'₦'+Number(n).toLocaleString();
-const C=[{id:'da',name:'Data Analysis',start:'2026-10-26',price:2000,blurb:'Spreadsheets, SQL and dashboards, ending with a full analysis project.',skills:['Spreadsheets','Data cleaning','SQL','Dashboards','Reporting']},
-{id:'va',name:'Virtual Assistance',start:'2026-11-23',price:2000,soon:1,blurb:'Run email, calendars and tasks for remote clients.',skills:['Email management','Calendar management','Task tools','Client communication']},
-{id:'dm',name:'Digital Marketing',start:'2027-01-11',price:2000,soon:1,blurb:'Content, social media and ads, with a campaign for your portfolio.',skills:['Content writing','Social media','Paid ads','Analytics']}];
+const C=[{id:'da',name:'Data Analysis',start:'2026-10-26',price:2000,blurb:'Spreadsheets, SQL and dashboards, ending with a full analysis project.',skills:['Spreadsheets','Data cleaning','SQL','Dashboards','Reporting']},];
 const cc=id=>C.find(c=>c.id===id),lvl=d=>['Beginner','Intermediate','Advanced'][Math.min(2,Math.floor(d/21))],pct=e=>Math.round(e.day/63*100);
 const stOf=e=>e.start||cc(e.cid).start,state=e=>e.status==='done'?'Complete':e.status==='review'?'Under review':days(stOf(e))>0?'Starts in '+days(stOf(e))+' days':'In progress';
 const unread=()=>S.notes.filter(n=>!n.r).length;
