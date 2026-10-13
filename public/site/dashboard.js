@@ -124,7 +124,12 @@ return `<h1>Help</h1>${Q.map(q=>`<details><summary>${q[0]}</summary><p class="mu
 function profile(){const r=(a,b)=>`<tr><td class="mute">${a}</td><td>${esc(b)}</td></tr>`;return `<h1>Profile</h1><div class="card scroll"><table>${r('Name',me.name)+r('Email',me.email)+r('Phone',me.phone||'Not provided')+r('Country',me.country||'Not provided')}</table><p><span class="tag" style="background:var(--ok);color:#fff">Email verified</span> <span class="tag">Phone verification not enabled</span></p></div><h2>More</h2>${hub()}<button class="btn g" id="lo">Log out</button>`}
 function enroll(id){const course=cc(id),dialog=$('#ed');dialog.innerHTML='<button class="vx" id="ex" type="button">Close</button><h3>Enrollment temporarily unavailable</h3><p class="mute">Course-key validation and verified online payments are not connected to the backend yet. No enrollment has been created and no payment has been taken.</p><p>Course: '+esc(course.name)+'</p><a class="btn g" href="contact.html">Contact TAMP</a>';$('#ex').onclick=()=>dialog.close();dialog.showModal()}
 function bind(){document.querySelectorAll('[data-en]').forEach(b=>b.onclick=()=>enroll(b.dataset.en));
-if($('#lo'))$('#lo').onclick=()=>{try{localStorage.removeItem('tamp_session')}catch(x){}location.href='index.html'};
+if($('#lo'))$('#lo').onclick=async()=>{
+ const token=sessionStorage.getItem('tamp_access_token');
+ try{if(token&&apiBase)await fetch(apiBase+'/auth/logout',{method:'POST',headers:{Authorization:'Bearer '+token}})}catch{}
+ try{localStorage.removeItem('tamp_session');sessionStorage.removeItem('tamp_access_token')}catch{}
+ location.href='index.html'
+};
 document.querySelectorAll('.qz').forEach(f=>f.onsubmit=ev=>{ev.preventDefault();const a=f.dataset.a.split(','),d=new FormData(f),s=a.filter((x,i)=>d.get('q'+i)===x).length,m=f.querySelector('.msg');m.style.color=s===a.length?'var(--ok)':'var(--bad)';m.textContent=s===a.length?'All correct. Well done.':s+' of '+a.length+' correct. Re-read the notes and try again.'});
 if($('#pf'))$('#pf').onsubmit=async ev=>{
  ev.preventDefault();const form=ev.target,m=$('#pm'),button=form.querySelector('button'),currentPassword=form.a.value,newPassword=form.b.value;
