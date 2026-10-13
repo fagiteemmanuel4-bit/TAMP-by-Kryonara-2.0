@@ -320,13 +320,20 @@ app.get('/api/health', async (req, res) => {
 })
 
 function emailDeliveryFailureMessage(error, purpose = 'verification') {
-  const detail = String(error?.message || '');
-  if (/API access from non-browser environments is currently disabled/i.test(detail)) {
-    return 'Email verification is temporarily unavailable. The site administrator must enable EmailJS API access for non-browser applications in EmailJS Dashboard → Account → Security, then try again.';
+  const detail = String(error?.message || '').toLowerCase();
+  if (purpose === 'reset') {
+    return 'We could not send the password-reset email right now. Please try again later.';
   }
-  return purpose === 'reset'
-    ? 'We could not send the password-reset email right now. Please try again later.'
-    : 'We could not send your verification email right now. Please try again later.';
+  if (/email address not authorized|not authorized/.test(detail)) {
+    return 'Supabase test email delivery only allows addresses added to the Supabase organization team. Add this test recipient to the team or configure a custom SMTP provider, then try again.';
+  }
+  if (/rate limit|too many requests/.test(detail)) {
+    return 'Supabase has temporarily limited verification emails. Wait a while before requesting another code.';
+  }
+  if (!isSupabaseOtpConfigured) {
+    return 'Supabase email verification is not configured yet. Set SUPABASE_URL and SUPABASE_ANON_KEY on the backend host.';
+  }
+  return 'We could not send your verification code right now. Please try again later.';
 }
 
 app.post('/api/auth/register', async (req, res, next) => {
