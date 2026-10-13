@@ -34,6 +34,8 @@ Template variables expected by code:
 
 Do not assume these variable names match the live EmailJS templates; open each template in EmailJS and confirm the exact recipient field, variable names, email service connection, sender verification and template ID. Send a test message to an inbox you control.
 
+**Required account setting for this backend:** the live Vercel logs show EmailJS refusing server-side calls because API access from non-browser environments is disabled. In EmailJS, open **Account → Security** and enable the setting that allows API requests from non-browser environments, then redeploy/retry and test delivery. This is an EmailJS account-level security control; changing Vercel routing or environment variables cannot override it. If you do not want to enable it, switch the backend to a transactional email provider with server-side API credentials instead. Never expose the private key in frontend code.
+
 ## Known failure causes and checks
 
 - Old UI used localStorage/demo code rather than the backend; this was changed in the current code path.
