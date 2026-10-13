@@ -1,7 +1,7 @@
-// Set this to the deployed backend URL, including /api, before enabling live authentication.
-// Example: https://tamp-api.example.com/api
+// Set apiBase to the deployed backend URL ending in /api before launching live auth.
+// Example: window.TAMP_CONFIG.apiBase = 'https://tamp-api.example.com/api'
 window.TAMP_CONFIG = {
   mode: 'backend',
-  apiBase: 'https://YOUR-BACKEND-DOMAIN.example/api',
+  apiBase: '',
   demo: false,
 };
