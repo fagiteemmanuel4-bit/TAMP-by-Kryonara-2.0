@@ -1,7 +1,13 @@
 const $=s=>document.querySelector(s),esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}},put=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-const ses=get('tamp_session',null);
-if(!ses)location.replace('login.html');else main();
+const ses=get('tamp_session',null),accessToken=sessionStorage.getItem('tamp_access_token'),apiBase=String(window.TAMP_CONFIG?.apiBase||'').replace(/\/$/,'');
+if(!ses||!accessToken||!apiBase){try{localStorage.removeItem('tamp_session')}catch(e){}location.replace('login.html?reason=session')}
+else fetch(apiBase+'/me',{headers:{Authorization:'Bearer '+accessToken}}).then(async response=>{
+  if(!response.ok)throw new Error('session');
+  const data=await response.json();
+  if(!data.user||data.user.email!==ses.email)throw new Error('session');
+  main();
+}).catch(()=>{try{localStorage.removeItem('tamp_session');sessionStorage.removeItem('tamp_access_token')}catch(e){}location.replace('login.html?reason=session')});
 function main(){TampUI.home={href:'#/overview',label:'Back to overview'};
 const me=get('tamp_users',[]).find(u=>u.email===ses.email)||{name:ses.name,email:ses.email,phone:'-',country:'-',nin:'-'};
 if(me.suspended){try{localStorage.removeItem('tamp_session')}catch(x){}location.replace('login.html');return}
