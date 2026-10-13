@@ -1,3 +1,4 @@
+[hidden]{display:none!important}
 :root{--bg:#F3F5F7;--ink:#14202B;--mute:#566570;--brand:#0F3D3E;--pop:#F2B632;--card:#fff;--line:#D9E0E5;--ok:#1C7A44;--bad:#B3261E;--sb:#0F3D3E}
 @media (prefers-color-scheme:dark){:root{--bg:#0C1417;--ink:#E8EEF1;--mute:#9DB0BA;--card:#142126;--line:#27383F;--ok:#4CC27F;--bad:#FF8A80;--sb:#0A2A2B}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 "Instrument Sans",system-ui,sans-serif}
