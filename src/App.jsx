@@ -43,15 +43,16 @@ function pathFrom(location) {
 function Brand({ light = false }) {
   return (
     <Link className={'brand' + (light ? ' brand-light' : '')} to="/" aria-label="TAMP by Kryonara home">
-      <svg viewBox="0 0 40 40" aria-hidden="true" className="brand-mark">
-        <rect width="40" height="40" rx="12" fill="currentColor" />
-        <path d="M9 13h22M20 13v17" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" />
-      </svg>
-      <span className="brand-word">TAMP<span className="brand-by">by Kryonara</span></span>
+      <img
+        className="brand-image"
+        src={light ? '/tamp-logo-white.svg' : '/tamp-logo.svg'}
+        alt="TAMP by Kryonara"
+        width="150"
+        height="32"
+      />
     </Link>
   )
 }
-
 function ButtonLink({ to, variant = 'primary', children, ...props }) {
   return <Link className={'button button-' + variant} to={to} {...props}>{children}</Link>
 }
