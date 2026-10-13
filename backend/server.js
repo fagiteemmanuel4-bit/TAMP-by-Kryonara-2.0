@@ -345,6 +345,32 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
+app.post('/api/me/delete', requireAuth, async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.user.email)
+    const password = req.body?.password
+    if (typeof password !== 'string' || !password) return res.status(400).json({ message: 'Enter your current password to confirm account deletion.' })
+    const user = await findUserByEmail(email)
+    const hash = user?.password_hash || user?.passwordHash
+    if (!user || !hash || !(await bcrypt.compare(password, hash))) return res.status(401).json({ message: 'The current password is incorrect.' })
+    const client = db()
+    if (client) {
+      const { error: pendingError } = await client.from('tamp_pending_registrations').delete().eq('email', email)
+      if (pendingError) throw pendingError
+      const { error: resetError } = await client.from('tamp_password_resets').delete().eq('email', email)
+      if (resetError) throw resetError
+      const { error: userError } = await client.from('tamp_users').delete().eq('email', email)
+      if (userError) throw userError
+    } else {
+      fallback.pending = fallback.pending.filter((entry) => entry.email !== email)
+      fallback.resets = fallback.resets.filter((entry) => entry.email !== email)
+      fallback.users = fallback.users.filter((entry) => entry.email !== email)
+    }
+    return res.json({ success: true, message: 'Your account has been deleted.' })
+  } catch (error) { next(error) }
+})
+
 app.get('/api/courses', (req, res) => res.json({ courses: [{ id: 'data-analysis', name: 'Data Analysis', status: 'active' }] }))
 
 app.get('/api/dashboard', requireAuth, async (req, res) => res.status(501).json({ message: 'The persistent learning-progress API is not configured yet. Student progress is not being fabricated.' }))
