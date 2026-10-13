@@ -29,6 +29,9 @@ export async function sendSignupOtp({ email, password, metadata }) {
   })
   if (error) throw error
   if (!data?.user) throw new Error('Supabase did not create a pending authentication user.')
+  if (data.session || data.user.email_confirmed_at || data.user.confirmed_at) {
+    throw new Error('Supabase email confirmation is disabled. Enable email confirmations so signup sends a verification OTP.')
+  }
   // With email confirmation enabled, Supabase sends its email confirmation OTP.
   // The Supabase Auth email template must render {{ .Token }}, never {{ .ConfirmationURL }}.
   return { ok: true }
