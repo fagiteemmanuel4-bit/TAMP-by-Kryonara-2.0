@@ -17,7 +17,8 @@ Changes made in the hardening pass:
 - Verification codes are cryptographically random, stored hashed, expire after 10 minutes and have a five-attempt cap. Password reset tokens are cryptographically random, stored hashed, single-use and expire after 30 minutes.
 - Authentication records, pending registrations and password reset tokens use Supabase tables; production auth fails closed when the database/JWT configuration is missing.
 - JWTs expire after two hours; changing a password increments the session version so older tokens are rejected.
-- Admin demo sign-in and fake vendor/certificate-verification claims are disabled. Enrollment is rejected until payment/key validation exists.
+- Admin demo sign-in and fake vendor/certificate-verification claims are disabled. The student dashboard no longer fabricates enrollments, payment receipts, certificates, phone/email verification or support-ticket success; legacy demo payment/enrollment/certificate records are ignored. Enrollment is rejected until payment/key validation exists.
+- Password changes now use the backend and invalidate older sessions; account deletion confirms the current password and removes authentication records.
 - A Vercel catch-all API function is deployed at `/api/*`; the frontend uses `/api`. Production JWT secret and Supabase URL are configured, but the Supabase service-role key and EmailJS credentials still need to be supplied.
 - The authentication schema and a Supabase security grant revocation have been applied to the connected `TAMP by Kryonara` project. GitHub Actions now checks the Vite build and JavaScript syntax.
 
