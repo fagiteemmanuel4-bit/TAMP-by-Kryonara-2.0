@@ -13,13 +13,10 @@ const app = express()
 const PORT = Number(process.env.PORT || 5000)
 const isProduction = process.env.NODE_ENV === 'production'
 const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? '' : 'dev-secret-change-me')
-if (!JWT_SECRET) throw new Error('JWT_SECRET must be configured in production.')
-if (isProduction && !isSupabaseConfigured) throw new Error('Supabase must be configured in production; in-memory storage is disabled.')
 
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '')
 const allowedOrigins = String(process.env.ALLOWED_ORIGINS || (isProduction ? '' : 'http://localhost:5173,http://localhost:5000'))
   .split(',').map((origin) => origin.trim()).filter(Boolean)
-if (isProduction && allowedOrigins.length === 0) throw new Error('ALLOWED_ORIGINS must list exact frontend origins in production.')
 
 app.disable('x-powered-by')
 app.use(cors({
@@ -67,8 +64,16 @@ const db = () => {
   return null
 }
 const requirePersistentDb = (res) => {
+  if (isProduction && !JWT_SECRET) {
+    res.status(503).json({ message: 'Authentication is not configured yet: set JWT_SECRET on the backend host.' })
+    return false
+  }
   if (isProduction && !isSupabaseConfigured) {
-    res.status(503).json({ message: 'The authentication database is not configured.' })
+    res.status(503).json({ message: 'Authentication is not configured yet: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on the backend host.' })
+    return false
+  }
+  if (isProduction && allowedOrigins.length === 0) {
+    res.status(503).json({ message: 'Authentication is not configured yet: set ALLOWED_ORIGINS to the exact frontend origin.' })
     return false
   }
   return true
@@ -208,6 +213,7 @@ async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) return res.status(401).json({ message: 'Authentication required.' })
+  if (isProduction && (!JWT_SECRET || !isSupabaseConfigured || allowedOrigins.length === 0)) return res.status(503).json({ message: 'Authentication service is not configured yet.' })
   try {
     const payload = jwt.verify(token, JWT_SECRET, { issuer: 'tamp-api', audience: 'tamp-app' })
     const user = await findUserByEmail(payload.email)
@@ -233,7 +239,7 @@ async function requireAdmin(req, res, next) {
   } catch (error) { next(error) }
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tamp-api', storage: isSupabaseConfigured ? 'persistent' : 'development-memory', emailConfigured: Boolean(process.env.EMAILJS_SERVICE_ID && process.env.EMAILJS_TEMPLATE_ID && process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY) }))
+app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tamp-api', storage: isSupabaseConfigured ? 'persistent' : 'unconfigured', authReady: Boolean(JWT_SECRET && isSupabaseConfigured && (!isProduction || allowedOrigins.length > 0)), emailConfigured: Boolean(process.env.EMAILJS_SERVICE_ID && (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) && (process.env.EMAILJS_RESET_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) && process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY) }))
 
 app.post('/api/auth/register', async (req, res, next) => {
   try {
