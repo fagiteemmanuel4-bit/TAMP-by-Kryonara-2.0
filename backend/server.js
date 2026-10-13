@@ -277,6 +277,17 @@ async function requireAdmin(req, res, next) {
   } catch (error) { next(error) }
 }
 
+function classifyDatabaseError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  const status = Number(error?.status)
+  if (status === 401 || /invalid api key|unauthorized|invalid jwt|jwt expired/.test(message)) return 'DATABASE_AUTH_FAILED'
+  if (status === 403 || /permission denied|row.level security|not allowed/.test(message)) return 'DATABASE_PERMISSION_DENIED'
+  if (/fetch failed|network|timed out|timeout|econn|socket/.test(message) || error?.name === 'TypeError') return 'DATABASE_NETWORK_ERROR'
+  if (/does not exist|could not find the table|schema cache/.test(message)) return 'DATABASE_SCHEMA_ERROR'
+  if (status > 0) return `DATABASE_HTTP_${status}`
+  return error?.code || 'DATABASE_QUERY_FAILED'
+}
+
 app.get('/api/health', async (req, res) => {
   let databaseConnected = false
   let databaseErrorCode = null
@@ -284,15 +295,9 @@ app.get('/api/health', async (req, res) => {
     try {
       const { error } = await getSupabaseClient().from('tamp_users').select('id', { count: 'exact', head: true }).limit(1)
       databaseConnected = !error
-      if (error) {
-        databaseErrorCode = error.status
-          ? `DATABASE_HTTP_${error.status}`
-          : (error.code || 'DATABASE_QUERY_FAILED')
-      }
+      if (error) databaseErrorCode = classifyDatabaseError(error)
     } catch (error) {
-      databaseErrorCode = error?.name === 'TypeError'
-        ? 'DATABASE_NETWORK_ERROR'
-        : (error?.status ? `DATABASE_HTTP_${error.status}` : (error?.code || 'DATABASE_QUERY_FAILED'))
+      databaseErrorCode = classifyDatabaseError(error)
     }
   } else {
     databaseErrorCode = 'DATABASE_NOT_CONFIGURED'
