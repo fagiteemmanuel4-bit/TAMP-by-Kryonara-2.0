@@ -12,7 +12,7 @@ async function apiRequest(path,body){
   const base=apiBase();
   if(!base)throw new Error('Account services are not connected yet. Please try again later.');
   let response;
-  try{response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+  try{response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(sessionStorage.getItem('tamp_access_token')?{Authorization:'Bearer '+sessionStorage.getItem('tamp_access_token')}:{})},body:JSON.stringify(body)})}
   catch{throw new Error('TAMP could not reach the account server. Please try again later.')}
   let data={};try{data=await response.json()}catch{}
   if(!response.ok)throw new Error(data.message||'The request failed. Please try again.')
