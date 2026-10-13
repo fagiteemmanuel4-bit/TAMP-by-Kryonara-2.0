@@ -29,6 +29,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 app.use(express.json({ limit: '32kb' }))
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store')
+  next()
+})
+
 
 const fallback = { users: [], pending: [], resets: [] }
 const RATE_WINDOW_MS = 15 * 60 * 1000
