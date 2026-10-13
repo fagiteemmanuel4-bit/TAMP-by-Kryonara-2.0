@@ -10,10 +10,22 @@ dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 5000
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me'
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'dev-secret-change-me')
+if (!JWT_SECRET) throw new Error('JWT_SECRET must be configured in production.')
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
-app.use(cors({ origin: true, credentials: true }))
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173,http://localhost:5000'))
+  .split(',').map((origin) => origin.trim()).filter(Boolean)
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+  throw new Error('ALLOWED_ORIGINS must list the deployed frontend origin in production.')
+}
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+    return callback(new Error('Origin not allowed by CORS'))
+  },
+  credentials: true,
+}))
 app.use(express.json())
 
 const fallbackDb = {
@@ -111,6 +123,13 @@ function getAuthToken(user) {
   )
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.user || !['admin', 'super'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Administrator access required.' })
+  }
+  next()
+}
+
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
@@ -201,10 +220,6 @@ app.post('/api/auth/register', async (req, res) => {
     email: normalizedEmail,
     expiresInSeconds: 600,
   })
-})
-
-app.post('/api/auth/signup', async (req, res) => {
-  return app._router.handle(req, res)
 })
 
 app.post('/api/auth/verify', async (req, res) => {
@@ -422,15 +437,16 @@ app.post('/api/admin/auth/login', async (req, res) => {
   }
 
   const adminUser = await findUserByEmail(normalizeEmail(email))
-  if (!adminUser || !(await bcrypt.compare(password, adminUser.passwordHash || adminUser.password_hash))) {
+  if (!adminUser || !['admin', 'super'].includes(adminUser.role) ||
+      !(await bcrypt.compare(password, adminUser.passwordHash || adminUser.password_hash))) {
     return res.status(401).json({ message: 'Invalid admin credentials.' })
   }
 
-  const token = getAuthToken({ ...adminUser, role: 'admin' })
+  const token = getAuthToken(adminUser)
   return res.json({ success: true, token, user: { id: adminUser.id, email: adminUser.email, role: 'admin' } })
 })
 
-app.get('/api/admin/overview', requireAuth, async (req, res) => {
+app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res) => {
   res.json({
     students: 1248,
     enrollments: 3412,
@@ -440,7 +456,7 @@ app.get('/api/admin/overview', requireAuth, async (req, res) => {
   })
 })
 
-app.get('/api/admin/students', requireAuth, async (req, res) => {
+app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res) => {
   const users = fallbackDb.users.map((user) => ({
     id: user.id,
     name: user.name,
