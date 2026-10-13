@@ -29,9 +29,9 @@ after(async () => {
 
 test('health endpoint reports incomplete production configuration without crashing', async () => {
   const response = await fetch(`${baseUrl}/api/health`)
-  assert.equal(response.status, 200)
+  assert.equal(response.status, 503)
   const body = await response.json()
-  assert.equal(body.ok, true)
+  assert.equal(body.ok, false)
   assert.equal(body.authReady, false)
   assert.equal(body.storage, 'unconfigured')
   assert.equal(body.emailConfigured, false)
@@ -40,8 +40,8 @@ test('health endpoint reports incomplete production configuration without crashi
 test('catch-all path normalization accepts paths with and without /api prefix', async () => {
   const direct = await fetch(`${baseUrl}/api/health`)
   const normalized = await fetch(`${baseUrl}/health`)
-  assert.equal(direct.status, 200)
-  assert.equal(normalized.status, 200)
+  assert.equal(direct.status, 503)
+  assert.equal(normalized.status, 503)
 })
 
 test('course catalogue does not advertise unimplemented courses', async () => {
