@@ -86,4 +86,4 @@ The main Vercel project now has a same-origin catch-all API function at `/api/*`
 
 ## Quality checks
 
-GitHub Actions runs a Vite build and syntax checks for key frontend/backend JavaScript files on pushes and pull requests to `master`.
+GitHub Actions runs a Vite production build, browser/backend JavaScript syntax checks, and backend API smoke tests on pushes and pull requests to `master`.
