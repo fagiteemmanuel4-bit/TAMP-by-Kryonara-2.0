@@ -23,6 +23,8 @@ jobs:
           node --check public/site/auth.js
           node --check public/site/site.js
           node --check public/site/dashboard.js
+          node --check public/site/protect.js
+          node --check public/site/config.js
           node --check public/admin/admin.js
           node --check public/admin/bridge.js
 
