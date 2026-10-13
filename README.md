@@ -39,7 +39,7 @@ Use Node.js 22 or newer. Never commit real environment values.
 
 ## Database setup
 
-Apply `backend/supabase/migrations/202610130001_auth_schema.sql` to the intended Supabase project before enabling production authentication. It creates private tables for users, pending email verifications and password resets. The backend uses the service-role key only on the server; never place that key in browser code.
+The authentication schema migration has been applied to the connected `TAMP by Kryonara` Supabase project and is also versioned at `backend/supabase/migrations/202610130001_auth_schema.sql`. The public-execution grant on the existing `rls_auto_enable()` helper was also revoked and is documented in `202610130002_revoke_public_rls_helper.sql`. It creates private tables for users, pending email verifications and password resets. The backend uses the service-role key only on the server; never place that key in browser code.
 
 To grant the first administrator, first create and verify the account through the normal signup flow, then promote the intended account from the Supabase SQL editor after confirming its email:
 
@@ -53,12 +53,12 @@ Replace the example address with the actual administrator account. Do not promot
 
 ## Required backend environment
 
-Set these on the backend host:
+Set these on the Vercel project `tamp` (production) or a separate backend host:
 
 - `NODE_ENV=production`
 - `JWT_SECRET` — long random secret, never the example value
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` — still must be copied from Supabase Project Settings → API Keys into Vercel as a sensitive value
 - `EMAILJS_SERVICE_ID`
 - `EMAILJS_PUBLIC_KEY`
 - `EMAILJS_PRIVATE_KEY`
@@ -73,7 +73,7 @@ EmailJS verification template variables: `to_email`, `code`. Password reset temp
 
 The frontend's live API URL is configured in `public/site/config.js` via `window.TAMP_CONFIG.apiBase`, ending in `/api`. It is intentionally blank until a real backend deployment URL is known. Signup, login, password recovery and account deletion will not work until the database migration, backend environment and API URL are configured.
 
-The backend includes a Vercel serverless entrypoint, but a Vercel project could not be linked automatically because the connected Vercel integration reported that it lacks write/admin permission to this GitHub repository. Do not treat a failed/absent API deployment as production-ready.
+The main Vercel project now has a same-origin catch-all API function at `/api/*`; its install command installs both the frontend and backend lockfiles. The frontend points to `/api`. The production API still requires the real Supabase service-role key and EmailJS credentials. The connected Vercel integration cannot create a separate backend project from this repository because GitHub reports insufficient write/admin permission, so the same-origin function is used instead.
 
 ## Current safe limitations
 
