@@ -6,7 +6,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/:path((?!health$|courses$).*)",
+      "source": "/api/:path*",
       "destination": "/api/health?__tamp_path=:path*"
     },
     {
