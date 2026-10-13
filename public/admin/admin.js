@@ -1,7 +1,7 @@
 const $=s=>document.querySelector(s),esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const DK='tampadmin_db';let DB=null;try{DB=JSON.parse(localStorage.getItem(DK))}catch(e){}if(!DB)DB=structuredClone(SEED);
 const save=()=>{try{localStorage.setItem(DK,JSON.stringify(DB))}catch(e){}};
-let me=null;try{me=JSON.parse(sessionStorage.getItem('ta_me'))}catch(e){}
+let me=null;try{sessionStorage.removeItem('ta_me')}catch(e){}
 DB.outbox=DB.outbox||[];DB.aiCourses=DB.aiCourses||[];DB.aiCfg=DB.aiCfg||{mode:'manual',endpoint:'/ai/generate',model:''};Bridge.pull(DB);Bridge.settings(DB.settings);
 const NOW=()=>new Date().toISOString().slice(0,16).replace('T',' '),TODAY=()=>new Date().toISOString().slice(0,10),money=n=>'₦'+Number(n).toLocaleString(),rnd=n=>Math.random().toString(36).slice(2,2+n).toUpperCase(),nid=k=>Math.max(0,...DB[k].map(x=>x.id))+1;
 const NAV=[['Overview',[['overview','Overview']]],['People',[['students','Students'],['admins','Admins and roles']]],['Learning',[['courses','Courses'],['cohorts','Cohorts'],['topics','Topics'],['assignments','Assignments'],['exams','Exam questions'],['ai','AI instructor'],['submissions','Submissions'],['certificates','Certificates'],['verifications','Verification log']]],['Money',[['payments','Payments'],['keys','Enrollment keys'],['vendors','Vendors']]],['Communication',[['support','Support inbox'],['announcements','Announcements'],['templates','Email templates'],['outbox','Sent emails']]],['System',[['pages','Content pages'],['reports','Reports'],['audit','Audit log'],['settings','Settings']]]];
