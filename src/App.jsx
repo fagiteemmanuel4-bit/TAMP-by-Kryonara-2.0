@@ -25,6 +25,12 @@ function LegacyRoute() {
     return <LegacyFrame src="/site/dashboard.html" />
   }
 
+  // Make the intended admin URL work directly. The previous version only
+  // routed /ADMIN followed by digits, so /admin silently redirected home.
+  if (pathname.toLowerCase() === '/admin' || pathname.toLowerCase() === '/admin/') {
+    return <LegacyFrame src="/admin/index.html" />
+  }
+
   if (/^\/ADMIN\d+$/i.test(pathname)) {
     return <LegacyFrame src="/admin/index.html" />
   }
