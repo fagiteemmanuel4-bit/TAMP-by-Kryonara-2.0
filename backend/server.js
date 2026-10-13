@@ -4,7 +4,7 @@ import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
-import { getSupabaseClient, isSupabaseConfigured } from './src/config/supabase.js'
+import { getSupabaseClient, isSupabaseConfigured, isSupabaseServerKeyMisconfigured } from './src/config/supabase.js'
 import { sendEmailCode, sendPasswordResetEmail } from './src/services/email.js'
 
 dotenv.config()
@@ -300,7 +300,9 @@ app.get('/api/health', async (req, res) => {
       databaseErrorCode = classifyDatabaseError(error)
     }
   } else {
-    databaseErrorCode = 'DATABASE_NOT_CONFIGURED'
+    databaseErrorCode = isSupabaseServerKeyMisconfigured
+      ? 'DATABASE_PUBLIC_KEY_USED_AS_SERVER_KEY'
+      : 'DATABASE_SERVER_KEY_MISSING'
   }
   const emailConfigured = Boolean(process.env.EMAILJS_SERVICE_ID &&
     (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
