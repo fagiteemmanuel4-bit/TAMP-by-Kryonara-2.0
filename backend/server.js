@@ -545,8 +545,19 @@ app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res, next)
 
 app.use((req, res) => res.status(404).json({ message: 'API endpoint not found.' }))
 app.use((error, req, res, next) => {
-  console.error('Unhandled API error:', error?.message || error)
   if (res.headersSent) return next(error)
+
+  // Malformed JSON is a client error, not an unhandled server failure.
+  // Do not log parser error objects: they can contain the submitted request body.
+  if (error?.type === 'entity.parse.failed' || error?.status === 400) {
+    return res.status(400).json({ message: 'Request body must be valid JSON.' })
+  }
+  if (error?.type === 'entity.too.large' || error?.status === 413) {
+    return res.status(413).json({ message: 'Request body is too large.' })
+  }
+
+  // Keep request bodies, provider responses, and credentials out of application logs.
+  console.error('Unhandled API error:', error?.name || 'Error', error?.code || 'UNKNOWN')
   return res.status(500).json({ message: 'An unexpected server error occurred.' })
 })
 
