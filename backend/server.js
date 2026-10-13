@@ -30,6 +30,13 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '32kb' }))
 app.use((req, res, next) => {
+  // Vercel catch-all functions may expose the wildcard path without the /api prefix.
+  // Normalize both /auth/... and /api/auth/... requests to the same Express routes.
+  if (req.path !== '/api' && !req.path.startsWith('/api/')) req.url = `/api${req.url}`
+  next()
+})
+
+app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
