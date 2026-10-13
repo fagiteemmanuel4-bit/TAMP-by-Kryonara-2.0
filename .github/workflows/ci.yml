@@ -1,0 +1,46 @@
+name: TAMP CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check public/site/auth.js
+          node --check public/site/site.js
+          node --check public/site/dashboard.js
+          node --check public/admin/admin.js
+          node --check public/admin/bridge.js
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Check backend JavaScript syntax
+        run: |
+          node --check server.js
+          node --check src/services/email.js
+          node --check src/config/supabase.js
+          node --check 'api/[...slug].js'
