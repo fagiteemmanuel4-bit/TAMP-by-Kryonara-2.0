@@ -4,7 +4,8 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 const supabaseUrl = process.env.SUPABASE_URL?.trim()
-const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || '').trim()
+// Prefer the active modern publishable key; keep supporting legacy anon keys for older deployments.
+const supabaseAnonKey = (process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim()
 
 export const isSupabaseOtpConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
