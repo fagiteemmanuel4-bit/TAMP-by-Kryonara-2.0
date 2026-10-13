@@ -87,3 +87,17 @@ The main Vercel project now has a same-origin catch-all API function at `/api/*`
 ## Quality checks
 
 GitHub Actions runs a Vite production build, browser/backend JavaScript syntax checks, and backend API smoke tests on pushes and pull requests to `master`.
+
+
+## Engineering documentation
+
+The engineering review has been split into focused documents under [`docs/`](docs/README.md):
+
+- [Architecture and stack](docs/ARCHITECTURE.md)
+- [Authentication and EmailJS](docs/AUTH_EMAILJS.md)
+- [Deployment runbook](docs/DEPLOYMENT_RUNBOOK.md)
+- [Release risks](docs/RELEASE_RISKS.md)
+- [QA and test plan](docs/TEST_PLAN.md)
+- [Remediation log and verification gaps](docs/REMEDIATION_LOG.md)
+
+Start with the documentation index before making additional production changes. Code-level fixes are not considered production-verified until the deployment, environment, provider templates, database persistence and end-to-end tests have passed.
