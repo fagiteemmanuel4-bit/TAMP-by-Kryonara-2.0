@@ -1,67 +1,89 @@
-# TAMP Monorepo
+# TAMP by Kryonara
 
-This repo contains the React frontend and a lightweight Express backend prepared for Supabase + EmailJS integration.
+TAMP is a cohort-based career-training product. This repository contains the public site prototype, the React/Vite shell, an Express API, and the initial persistent authentication schema.
 
-## Project structure
+## Repository map
 
-- `src/` — Vite React frontend
-- `public/site/` — original student site files preserved from the static project
-- `public/admin/` — original admin site files preserved from the static project
-- `backend/` — Express API for auth, onboarding, dashboard data, and admin endpoints
-- `vercel.json` — deployment rewrite rules for SPA routing
+- `public/site/` — public marketing, account, and student UI (legacy static HTML/CSS/JavaScript).
+- `public/admin/` — admin UI prototype. Sign-in is intentionally disabled until the admin interface uses authenticated, persistent backend operations.
+- `src/` — React/Vite shell that currently frames the static site.
+- `backend/server.js` — Express API, auth and account endpoints.
+- `backend/src/services/email.js` — EmailJS verification and password-reset delivery.
+- `backend/supabase/migrations/` — versioned database schema.
+- `.github/workflows/ci.yml` — frontend build and JavaScript syntax checks.
+- `PROJECT_AUDIT.md` — risk assessment and remediation status.
 
-## Frontend
+## Stack
+
+React 19, Vite 8, React Router 7, static HTML/CSS/vanilla JS for the current student/admin UI, Node.js + Express 4, Supabase/Postgres, bcryptjs, JWT, and EmailJS. The static student UI remains a legacy prototype; course progress, assignments, payments, keys, certificates and most admin actions are not yet fully server-backed.
+
+## Local development
+
+Frontend:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-## Backend
+Backend:
 
 ```bash
 cd backend
-npm install
+npm ci
 cp .env.example .env
 npm run dev
 ```
 
-## Required backend environment values
+Use Node.js 22 or newer. Never commit real environment values.
 
-See `backend/.env.example` and fill in:
+## Database setup
 
+Apply `backend/supabase/migrations/202610130001_auth_schema.sql` to the intended Supabase project before enabling production authentication. It creates private tables for users, pending email verifications and password resets. The backend uses the service-role key only on the server; never place that key in browser code.
+
+To grant the first administrator, first create and verify the account through the normal signup flow, then promote the intended account from the Supabase SQL editor after confirming its email:
+
+```sql
+update public.tamp_users
+set role = 'super', updated_at = now()
+where email = lower('your-admin-email@example.com');
+```
+
+Replace the example address with the actual administrator account. Do not promote a public or shared mailbox.
+
+## Required backend environment
+
+Set these on the backend host:
+
+- `NODE_ENV=production`
+- `JWT_SECRET` — long random secret, never the example value
 - `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `EMAILJS_SERVICE_ID`
-- `EMAILJS_TEMPLATE_ID`
 - `EMAILJS_PUBLIC_KEY`
 - `EMAILJS_PRIVATE_KEY`
-- `JWT_SECRET`
-- `FRONTEND_URL`
-- `ALLOWED_ORIGINS` (comma-separated exact frontend origins; required in production)
+- `EMAILJS_VERIFICATION_TEMPLATE_ID`
+- `EMAILJS_RESET_TEMPLATE_ID`
+- `FRONTEND_URL` — frontend origin, e.g. `https://your-site.example`
+- `ALLOWED_ORIGINS` — comma-separated exact frontend origins
 
-## Current implementation notes
+EmailJS verification template variables: `to_email`, `code`. Password reset template variables: `to_email`, `reset_url`. Confirm both templates actually deliver to the supplied recipient.
 
-- Email verification is wired to EmailJS
-- Phone verification is intentionally left as `coming_soon`
-- Supabase is supported as the persistence layer, but the app is still compatible with the local in-memory fallback during setup
-- The admin route is available at `/ADMIN19841812`
+## Deployment notes
 
-## Deployment
+The frontend's live API URL is configured in `public/site/config.js` via `window.TAMP_CONFIG.apiBase`, ending in `/api`. It is intentionally blank until a real backend deployment URL is known. Signup, login, password recovery and account deletion will not work until the database migration, backend environment and API URL are configured.
 
-- Frontend: Vercel
-- Backend: deploy `backend/` as a persistent Node.js service with a stable HTTPS URL. Do not rely on in-memory registration/reset state in a serverless deployment.
-- Set the backend environment variables from `backend/.env.example` in the backend host. Production must have `JWT_SECRET`, `ALLOWED_ORIGINS`, Supabase credentials and EmailJS credentials configured.
-- Set `window.TAMP_CONFIG.apiBase` in `public/site/config.js` to the backend URL ending in `/api` (for example, `https://api.example.com/api`). Do not put EmailJS private keys or the Supabase service-role key in frontend files.
-- Verify signup with a real inbox, then verify login, expired/incorrect code handling and provider errors before inviting students.
-- SPA routing is handled in `vercel.json`; it does not automatically deploy the Express backend.
+The backend includes a Vercel serverless entrypoint, but a Vercel project could not be linked automatically because the connected Vercel integration reported that it lacks write/admin permission to this GitHub repository. Do not treat a failed/absent API deployment as production-ready.
 
-## GitHub push
+## Current safe limitations
 
-This repo has already been initialized with an initial Git commit and is ready to push to a remote repository.
+- Enrollment is deliberately rejected until payment or course-key validation exists.
+- Student dashboard progress is not yet stored in the database.
+- Certificate lookup does not claim local/demo certificates are valid.
+- Vendor key generation and payouts are disabled until backed by the real transaction system.
+- Admin sign-in is disabled because the visible dashboard still uses local seeded data.
+- Account deletion currently removes the backend account and authentication records; any future learning/payment/certificate tables must also be included in the deletion/retention workflow.
 
-```bash
-git remote add origin <your-github-repository-url>
-git push -u origin master
-```
+## Quality checks
+
+GitHub Actions runs a Vite build and syntax checks for key frontend/backend JavaScript files on pushes and pull requests to `master`.
