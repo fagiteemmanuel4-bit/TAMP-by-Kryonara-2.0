@@ -60,7 +60,23 @@ const p=get(S,null);let tries=0;
 if(!p){$('#vw').innerHTML='<h1>Nothing to verify yet</h1><p class="mute">Start by creating your account.</p><a class="btn" href="signup.html">Create account</a>'}
 else{
   $('#sub').textContent='Enter the 6-digit code sent to '+p.email+'. Phone verification is not enabled yet.';
-  const resend=$('#rs');if(resend){resend.disabled=true;resend.textContent='Email code sent';}
+  const resend=$('#rs');
+  if(resend){
+    resend.disabled=false;resend.textContent='Resend code';
+    resend.onclick=async()=>{
+      resend.disabled=true;M('Sending a new verification code...');
+      try{
+        const result=await apiRequest('/auth/resend',{email:p.email});
+        M(result.message||'A new code has been sent.');
+        let left=30;
+        const cooldown=()=>{
+          if(left<=0){resend.disabled=false;resend.textContent='Resend code';return}
+          resend.textContent='Resend in '+left+'s';left--;setTimeout(cooldown,1000);
+        };
+        cooldown();
+      }catch(error){M(error.message);resend.disabled=false;resend.textContent='Resend code'}
+    };
+  }
   f.onsubmit=async ev=>{
     ev.preventDefault();M();if(!all(f))return;
     if(tries>=5)return M('Too many attempts. Please restart registration.');
