@@ -357,7 +357,7 @@ app.post('/api/auth/register', async (req, res, next) => {
     try {
       await sendSignupOtp({ email: normalizedEmail, password, metadata: { name: registration.name } })
     } catch (error) {
-      await updatePending(normalizedEmail, { remove: true })
+      // Keep the pending registration so the learner can use the resend-code flow if Supabase created an unconfirmed Auth user before delivery failed.
       console.error('Supabase signup OTP delivery failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
       return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
