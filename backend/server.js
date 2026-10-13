@@ -393,6 +393,25 @@ app.post('/api/auth/reset', async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
+app.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.user.email)
+    const currentPassword = req.body?.currentPassword
+    const newPassword = req.body?.newPassword
+    if (typeof currentPassword !== 'string' || !currentPassword || !validPassword(newPassword)) {
+      return res.status(400).json({ message: 'Enter your current password and a new password of 10–128 characters.' })
+    }
+    const user = await findUserByEmail(email)
+    const hash = user?.password_hash || user?.passwordHash
+    if (!user || !hash || !(await bcrypt.compare(currentPassword, hash))) {
+      return res.status(401).json({ message: 'Your current password is incorrect.' })
+    }
+    await updateUserPassword(email, await bcrypt.hash(newPassword, 12))
+    return res.json({ success: true, message: 'Password changed. Please sign in again.' })
+  } catch (error) { next(error) }
+})
+
 app.post('/api/auth/logout', (req, res) => res.json({ success: true, message: 'Signed out on this device. Token expires within two hours.' }))
 
 app.get('/api/me', requireAuth, async (req, res, next) => {
