@@ -45,10 +45,10 @@ f.onsubmit=async ev=>{
   busy(true);
   try{
     const result=await apiRequest('/auth/register',{
-      name:d.name.trim(),email:em,phone:d.phone.replace(/[\\s-]/g,''),country:d.country,
+      name:d.name.trim(),email:em,phone:d.phone.replace(/[\s-]/g,''),country:d.country,
       nin:d.nin,password:d.pw,acceptedTerms:d.ok==='on'
     });
-    set(S,{name:d.name.trim(),email:em,phone:d.phone.replace(/[\\s-]/g,''),country:d.country});
+    set(S,{name:d.name.trim(),email:em,phone:d.phone.replace(/[\s-]/g,''),country:d.country});
     M(result.message||'Verification email sent. Check your inbox and spam folder.');
     location.href='verify.html';
   }catch(error){M(error.message);busy(false)}
