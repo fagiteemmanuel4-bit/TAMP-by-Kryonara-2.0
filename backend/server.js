@@ -5,8 +5,7 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { getSupabaseClient, isSupabaseConfigured, isSupabaseServerKeyMisconfigured } from './src/config/supabase.js'
-import { sendPasswordResetEmail } from './src/services/email.js'
-import { sendSignupOtp, resendSignupOtp, verifySignupOtp, isSupabaseOtpConfigured } from './src/services/supabase-auth.js'
+import { sendEmailCode, sendPasswordResetEmail } from './src/services/email.js'
 
 dotenv.config()
 
@@ -305,7 +304,7 @@ app.get('/api/health', async (req, res) => {
       ? 'DATABASE_PUBLIC_KEY_USED_AS_SERVER_KEY'
       : 'DATABASE_SERVER_KEY_MISSING'
   }
-  const emailConfigured = isSupabaseOtpConfigured
+  const emailConfigured = Boolean(process.env.EMAILJS_SERVICE_ID?.trim() && process.env.EMAILJS_VERIFICATION_TEMPLATE_ID?.trim() && process.env.EMAILJS_PUBLIC_KEY?.trim() && process.env.EMAILJS_PRIVATE_KEY?.trim())
   const authReady = Boolean(JWT_SECRET && databaseConnected && (!isProduction || allowedOrigins.length > 0))
   const ok = Boolean(authReady && emailConfigured)
   return res.status(ok ? 200 : 503).json({
@@ -320,20 +319,22 @@ app.get('/api/health', async (req, res) => {
 })
 
 function emailDeliveryFailureMessage(error, purpose = 'verification') {
-  const detail = String(error?.message || '').toLowerCase();
-  if (purpose === 'reset') {
-    return 'We could not send the password-reset email right now. Please try again later.';
+  const detail = String(error?.message || '').toLowerCase()
+  if (/api access from non-browser environments is currently disabled/i.test(detail)) {
+    return 'Email verification is temporarily unavailable. The site administrator must enable EmailJS API access for non-browser applications in EmailJS Dashboard → Account → Security, then try again.'
   }
   if (/email address not authorized|not authorized/.test(detail)) {
-    return 'Supabase test email delivery only allows addresses added to the Supabase organization team. Add this test recipient to the team or configure a custom SMTP provider, then try again.';
+    return 'The email provider refused this recipient. Check the recipient address and EmailJS account restrictions.'
   }
   if (/rate limit|too many requests/.test(detail)) {
-    return 'Supabase has temporarily limited verification emails. Wait a while before requesting another code.';
+    return 'The email provider has temporarily limited verification messages. Wait a while before requesting another code.'
   }
-  if (!isSupabaseOtpConfigured) {
-    return 'Supabase email verification is not configured yet. Set SUPABASE_URL and SUPABASE_ANON_KEY on the backend host.';
+  if (/timed out|timeout|aborterror/.test(detail)) {
+    return 'The email provider did not respond in time. Please try again in a moment.'
   }
-  return 'We could not send your verification code right now. Please try again later.';
+  return purpose === 'reset'
+    ? 'We could not send the password-reset email right now. Please try again later.'
+    : 'We could not send your verification email right now. Please try again later.'
 }
 
 app.post('/api/auth/register', async (req, res, next) => {
@@ -348,17 +349,21 @@ app.post('/api/auth/register', async (req, res, next) => {
     if (phone && !/^\+?\d{10,15}$/.test(String(phone).replace(/[\s-]/g, ''))) return res.status(400).json({ message: 'Enter a valid phone number including country code.' })
     const existing = await findUserByEmail(normalizedEmail)
     if (existing) return res.status(409).json({ message: 'An account already exists for this email.' })
+    const code = generateCode()
     const registration = {
       id: makeId('user'), name: String(name).trim(), email: normalizedEmail,
       phone: phone ? String(phone).trim() : null, country: String(country || '').slice(0, 80) || null,
       passwordHash: await bcrypt.hash(password, 12), role: 'student', termsAcceptedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
     }
-    await savePending(normalizedEmail, sha256(randomBytes(32).toString('hex')), registration)
+    await savePending(normalizedEmail, code, registration)
     try {
-      await sendSignupOtp({ email: normalizedEmail, password, metadata: { name: registration.name } })
+      await sendEmailCode({ email: normalizedEmail, code })
     } catch (error) {
-      // Keep the pending registration so the learner can use the resend-code flow if Supabase created an unconfirmed Auth user before delivery failed.
-      console.error('Supabase signup OTP delivery failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
+      await updatePending(normalizedEmail, { remove: true })
+      const reason = /api access from non-browser environments is currently disabled/i.test(String(error?.message || ''))
+        ? 'EMAILJS_SERVER_ACCESS_DISABLED'
+        : 'EMAIL_PROVIDER_REJECTED'
+      console.error('Email verification delivery failed:', reason)
       return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.status(200).json({ success: true, message: 'Verification code sent to your email.', email: normalizedEmail, expiresInSeconds: 600 })
@@ -377,15 +382,22 @@ app.post('/api/auth/resend', async (req, res, next) => {
       await updatePending(email, { remove: true })
       return res.status(400).json({ message: 'Your registration has expired. Please sign up again.' })
     }
-    await savePending(email, sha256(randomBytes(32).toString('hex')), pending.registration)
+    const code = generateCode()
+    await savePending(email, code, pending.registration)
     try {
-      await resendSignupOtp(email)
+      await sendEmailCode({ email, code })
     } catch (error) {
-      console.error('Supabase signup OTP resend failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
+      await updatePending(email, { remove: true })
+      const reason = /api access from non-browser environments is currently disabled/i.test(String(error?.message || ''))
+        ? 'EMAILJS_SERVER_ACCESS_DISABLED'
+        : 'EMAIL_PROVIDER_REJECTED'
+      console.error('Verification resend failed:', reason)
       return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.json({ success: true, message: 'A new verification code has been sent.', expiresInSeconds: 600 })
-  } catch (error) { next(error) }
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.post('/api/auth/verify', async (req, res, next) => {
@@ -403,194 +415,29 @@ app.post('/api/auth/verify', async (req, res, next) => {
       await updatePending(email, { remove: true })
       return res.status(429).json({ message: 'Too many attempts. Please sign up again.' })
     }
-    try {
-      await verifySignupOtp({ email, token: code })
-    } catch (error) {
+    const expected = Buffer.from(pending.codeHash, 'hex')
+    const received = Buffer.from(sha256(code), 'hex')
+    if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
       await updatePending(email, { attempts: (pending.attempts || 0) + 1 })
-      const detail = String(error?.message || '').toLowerCase()
-      if (/expired|invalid|token/.test(detail)) return res.status(400).json({ message: 'Incorrect or expired verification code. Request a new code and try again.' })
-      console.error('Supabase signup OTP verification failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
-      return res.status(503).json({ message: 'Email verification is temporarily unavailable. Please try again shortly.' })
+      return res.status(400).json({ message: 'Incorrect verification code.' })
     }
     if (await findUserByEmail(email)) {
       await updatePending(email, { remove: true })
       return res.status(409).json({ message: 'An account already exists for this email. Please log in.' })
     }
     const registration = pending.registration
-    const user = { id: registration.id, name: registration.name, email: registration.email, phone: registration.phone, country: registration.country, passwordHash: registration.passwordHash, role: 'student', termsAcceptedAt: registration.termsAcceptedAt, createdAt: registration.createdAt }
+    const user = {
+      id: registration.id, name: registration.name, email: registration.email,
+      phone: registration.phone, country: registration.country,
+      passwordHash: registration.passwordHash, role: 'student',
+      termsAcceptedAt: registration.termsAcceptedAt, createdAt: registration.createdAt,
+    }
     const saved = await saveUser(user)
     await updatePending(email, { remove: true })
     return res.status(201).json({ success: true, message: 'Email verified successfully.', token: getAuthToken(saved), user: publicUser(saved) })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/auth/login', async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const email = normalizeEmail(req.body?.email), password = req.body?.password
-    if (!validEmail(email) || typeof password !== 'string' || !password) return res.status(400).json({ message: 'Enter your email and password.' })
-    const user = await findUserByEmail(email)
-    const hash = user?.password_hash || user?.passwordHash
-    if (!user || !hash || !(await bcrypt.compare(password, hash))) return res.status(401).json({ message: 'Invalid email or password.' })
-    return res.json({ success: true, token: getAuthToken(user), user: publicUser(user) })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/auth/forgot', async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const email = normalizeEmail(req.body?.email)
-    if (!validEmail(email)) return res.status(400).json({ message: 'Enter a valid email address.' })
-    const user = await findUserByEmail(email)
-    if (user) {
-      const token = generateToken()
-      await saveReset(email, token)
-      const resetUrl = `${FRONTEND_URL}/site/reset-password.html?t=${encodeURIComponent(token)}`
-      try { await sendPasswordResetEmail({ email, resetUrl }) }
-      catch (error) {
-        await consumeReset(sha256(token))
-        // Keep the response identical for known and unknown accounts to prevent email enumeration.
-        console.error('Password reset email delivery failed:', error.message)
-      }
-    }
-    return res.json({ success: true, message: 'If an account exists, a password reset email will be sent.' })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/auth/reset', async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const token = String(req.body?.token || '')
-    const password = req.body?.password
-    if (!token || !validPassword(password)) return res.status(400).json({ message: 'Use a valid reset link and a password of 10–128 characters.' })
-    const reset = await findReset(token)
-    if (!reset) return res.status(400).json({ message: 'Reset link is invalid or expired. Request a new one.' })
-    const consumed = await consumeReset(reset.tokenHash)
-    if (!consumed) return res.status(400).json({ message: 'Reset link is invalid or has already been used. Request a new one.' })
-    const updated = await updateUserPassword(reset.email, await bcrypt.hash(password, 12))
-    if (!updated) return res.status(400).json({ message: 'The account could not be updated. Please request a new reset link.' })
-    return res.json({ success: true, message: 'Password updated. Please log in again.' })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const email = normalizeEmail(req.user.email)
-    const currentPassword = req.body?.currentPassword
-    const newPassword = req.body?.newPassword
-    if (typeof currentPassword !== 'string' || !currentPassword || !validPassword(newPassword)) {
-      return res.status(400).json({ message: 'Enter your current password and a new password of 10–128 characters.' })
-    }
-    const user = await findUserByEmail(email)
-    const hash = user?.password_hash || user?.passwordHash
-    if (!user || !hash || !(await bcrypt.compare(currentPassword, hash))) {
-      return res.status(401).json({ message: 'Your current password is incorrect.' })
-    }
-    await updateUserPassword(email, await bcrypt.hash(newPassword, 12))
-    return res.json({ success: true, message: 'Password changed. Please sign in again.' })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/auth/logout', requireAuth, async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    await incrementSessionVersion(normalizeEmail(req.user.email))
-    return res.json({ success: true, message: 'Signed out. Your current session has been invalidated.' })
-  } catch (error) { next(error) }
-})
-
-app.get('/api/me', requireAuth, async (req, res, next) => {
-  try {
-    const user = await findUserByEmail(req.user.email)
-    if (!user) return res.status(404).json({ message: 'User not found.' })
-    return res.json({ user: publicUser(user) })
-  } catch (error) { next(error) }
-})
-
-app.post('/api/me/delete', requireAuth, async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const email = normalizeEmail(req.user.email)
-    const password = req.body?.password
-    if (typeof password !== 'string' || !password) return res.status(400).json({ message: 'Enter your current password to confirm account deletion.' })
-    const user = await findUserByEmail(email)
-    const hash = user?.password_hash || user?.passwordHash
-    if (!user || !hash || !(await bcrypt.compare(password, hash))) return res.status(401).json({ message: 'The current password is incorrect.' })
-    const client = db()
-    if (client) {
-      const { error: pendingError } = await client.from('tamp_pending_registrations').delete().eq('email', email)
-      if (pendingError) throw pendingError
-      const { error: resetError } = await client.from('tamp_password_resets').delete().eq('email', email)
-      if (resetError) throw resetError
-      const { error: userError } = await client.from('tamp_users').delete().eq('email', email)
-      if (userError) throw userError
-    } else {
-      fallback.pending = fallback.pending.filter((entry) => entry.email !== email)
-      fallback.resets = fallback.resets.filter((entry) => entry.email !== email)
-      fallback.users = fallback.users.filter((entry) => entry.email !== email)
-    }
-    return res.json({ success: true, message: 'Your account has been deleted.' })
-  } catch (error) { next(error) }
-})
-
-app.get('/api/courses', (req, res) => res.json({ courses: [{ id: 'data-analysis', name: 'Data Analysis', status: 'active' }] }))
-
-app.get('/api/dashboard', requireAuth, async (req, res) => res.status(501).json({ message: 'The persistent learning-progress API is not configured yet. Student progress is not being fabricated.' }))
-
-app.post('/api/enrollments', requireAuth, async (req, res) => res.status(501).json({ message: 'Enrollment is unavailable until payment/key verification is connected. No enrollment has been created.' }))
-
-app.post('/api/admin/auth/login', async (req, res, next) => {
-  try {
-    if (!requirePersistentDb(res)) return
-    const email = normalizeEmail(req.body?.email), password = req.body?.password
-    const user = validEmail(email) ? await findUserByEmail(email) : null
-    const hash = user?.password_hash || user?.passwordHash
-    if (!user || !['admin', 'super'].includes(user.role) || !hash || !(await bcrypt.compare(String(password || ''), hash))) {
-      return res.status(401).json({ message: 'Invalid admin credentials.' })
-    }
-    return res.json({ success: true, token: getAuthToken(user), user: publicUser(user) })
-  } catch (error) { next(error) }
-})
-
-app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res, next) => {
-  try {
-    const client = db()
-    if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
-    const { count, error } = await client.from('tamp_users').select('id', { count: 'exact', head: true }).eq('role', 'student')
-    if (error) throw error
-    return res.json({ students: count || 0, enrollments: null, pendingReview: null, revenue: null, note: 'Enrollment, review and revenue metrics are withheld until their persistent tables are implemented.' })
-  } catch (error) { next(error) }
-})
-
-app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res, next) => {
-  try {
-    const client = db()
-    if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
-    const { data, error } = await client.from('tamp_users').select('id,name,email,role,created_at').eq('role', 'student').order('created_at', { ascending: false }).limit(500)
-    if (error) throw error
-    return res.json({ students: (data || []).map((user) => ({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.created_at, status: 'active' })) })
-  } catch (error) { next(error) }
-})
-
-app.use((req, res) => res.status(404).json({ message: 'API endpoint not found.' }))
-app.use((error, req, res, next) => {
-  if (res.headersSent) return next(error)
-
-  // Malformed JSON is a client error, not an unhandled server failure.
-  // Do not log parser error objects: they can contain the submitted request body.
-  if (error?.type === 'entity.parse.failed' || error?.status === 400) {
-    return res.status(400).json({ message: 'Request body must be valid JSON.' })
+  } catch (error) {
+    next(error)
   }
-  if (error?.type === 'entity.too.large' || error?.status === 413) {
-    return res.status(413).json({ message: 'Request body is too large.' })
-  }
-
-  // Keep request bodies, provider responses, and credentials out of application logs.
-  console.error('Unhandled API error:', error?.name || 'Error', error?.code || 'UNKNOWN')
-  return res.status(500).json({ message: 'An unexpected server error occurred.' })
 })
 
-if (!process.env.VERCEL) app.listen(PORT, () => console.log(`TAMP API listening on port ${PORT}; storage=${isSupabaseConfigured ? 'persistent' : 'development-memory'}`))
 
-export default app
