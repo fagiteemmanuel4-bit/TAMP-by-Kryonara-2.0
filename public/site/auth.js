@@ -4,7 +4,7 @@ const set=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const hash=async s=>{try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return'x'+btoa(unescape(encodeURIComponent(s)))}};
 const R={name:v=>/^\S{2,}(\s+\S{2,})+$/.test(v.trim())||'Enter your first and last name.',
 email:v=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim())||'Enter a valid email, like name@example.com.',
-phone:v=>/^\+?\d{10,15}$/.test(v.replace(/[\s-]/g,''))||'Enter a valid phone number with country code.',
+phone:v=>!v.trim()||/^\+?\d{10,15}$/.test(v.replace(/[\s-]/g,''))||'Enter a valid phone number with country code.',
 nin:v=>/^\d{11}$/.test(v)||'Your NIN is exactly 11 digits.',
 pw:v=>(v.length>=10&&v.length<=128&&/\d/.test(v)&&/[a-z]/i.test(v))||'Use 10–128 characters, with at least one letter and one number.',
 pwl:v=>!!v||'Enter your password.',code:v=>/^\d{6}$/.test(v)||'Enter the 6-digit code.',ok:(v,e)=>e.checked||'Please accept to continue.'};
