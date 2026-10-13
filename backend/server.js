@@ -143,6 +143,9 @@ app.post('/api/auth/register', async (req, res) => {
   if (!name || !email || !password || !acceptedTerms) {
     return res.status(400).json({ message: 'Name, email, password and acceptedTerms are required.' })
   }
+  if (String(password).length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters.' })
+  }
 
   const normalizedEmail = normalizeEmail(email)
   const existingUser = await findUserByEmail(normalizedEmail)
@@ -150,24 +153,53 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(409).json({ message: 'An account already exists for this email.' })
   }
 
+  // Remove expired/used pending codes so stale registrations cannot be verified.
+  const now = Date.now()
+  fallbackDb.verificationCodes = fallbackDb.verificationCodes.filter(
+    (entry) => !entry.used && now - new Date(entry.createdAt).getTime() < 10 * 60 * 1000
+  )
+
   const code = generateCode()
+  const passwordHash = await bcrypt.hash(password, 12)
+  const registration = {
+    name: String(name).trim(),
+    email: normalizedEmail,
+    phone: phone ? String(phone).trim() : null,
+    country: country ? String(country).trim() : null,
+    ninLast4: nin ? String(nin).slice(-4) : null,
+    passwordHash,
+    role: 'student',
+    createdAt: new Date().toISOString(),
+  }
+
+  try {
+    const result = await sendEmailCode({ email: normalizedEmail, code })
+    if (result.simulated) {
+      throw new Error('EmailJS returned simulated delivery; refusing to claim that an email was sent.')
+    }
+  } catch (error) {
+    console.error('Email verification delivery failed:', error.message)
+    return res.status(503).json({
+      success: false,
+      code: 'EMAIL_DELIVERY_FAILED',
+      message: 'We could not send your verification email. Please try again later or contact support.',
+    })
+  }
+
   fallbackDb.verificationCodes.push({
     email: normalizedEmail,
     code,
+    registration,
     createdAt: new Date().toISOString(),
     used: false,
+    attempts: 0,
   })
-
-  try {
-    await sendEmailCode({ email: normalizedEmail, code })
-  } catch (error) {
-    console.error('Email send failed:', error)
-  }
 
   return res.status(200).json({
     success: true,
-    message: 'Verification code sent to your email. Phone verification is coming soon.',
+    message: 'Verification code sent to your email.',
     email: normalizedEmail,
+    expiresInSeconds: 600,
   })
 })
 
@@ -176,7 +208,7 @@ app.post('/api/auth/signup', async (req, res) => {
 })
 
 app.post('/api/auth/verify', async (req, res) => {
-  const { email, emailCode, phoneCode } = req.body || {}
+  const { email, emailCode } = req.body || {}
   const normalizedEmail = normalizeEmail(email)
 
   if (!normalizedEmail || !emailCode) {
@@ -184,54 +216,55 @@ app.post('/api/auth/verify', async (req, res) => {
   }
 
   const pending = fallbackDb.verificationCodes.find(
-    (entry) => entry.email === normalizedEmail && entry.code === String(emailCode) && !entry.used
+    (entry) => entry.email === normalizedEmail && !entry.used
   )
 
-  if (!pending) {
-    return res.status(400).json({ message: 'Invalid or expired email code.' })
+  if (!pending || Date.now() - new Date(pending.createdAt).getTime() >= 10 * 60 * 1000) {
+    return res.status(400).json({ message: 'Verification code is invalid or expired. Please sign up again.' })
+  }
+
+  pending.attempts = (pending.attempts || 0) + 1
+  if (pending.attempts > 5) {
+    pending.used = true
+    return res.status(429).json({ message: 'Too many incorrect attempts. Please sign up again.' })
+  }
+  if (pending.code !== String(emailCode).trim()) {
+    return res.status(400).json({ message: 'Incorrect verification code.' })
   }
 
   pending.used = true
-
-  if (phoneCode) {
-    console.log('Phone verification requested but not implemented yet.')
-  }
-
-  const authUser = await findUserByEmail(normalizedEmail)
-  if (authUser) {
-    const token = getAuthToken(authUser)
+  const existingUser = await findUserByEmail(normalizedEmail)
+  if (existingUser) {
+    const token = getAuthToken(existingUser)
     return res.status(200).json({
       success: true,
-      message: 'Account already verified. Phone verification is coming soon.',
+      message: 'This account is already registered.',
       token,
       user: {
-        id: authUser.id,
-        email: authUser.email,
-        name: authUser.name,
-        role: authUser.role || 'student',
+        id: existingUser.id,
+        email: existingUser.email,
+        name: existingUser.name,
+        role: existingUser.role || 'student',
       },
     })
   }
 
+  const registration = pending.registration
+  if (!registration) {
+    return res.status(500).json({ message: 'Registration details expired. Please sign up again.' })
+  }
+
   const user = {
     id: makeId('user'),
-    name: req.body.name || 'New student',
-    email: normalizedEmail,
-    phone: req.body.phone || null,
-    country: req.body.country || null,
-    ninLast4: req.body.nin ? String(req.body.nin).slice(-4) : null,
-    passwordHash: req.body.password ? await bcrypt.hash(req.body.password, 10) : null,
-    role: 'student',
-    createdAt: new Date().toISOString(),
+    ...registration,
   }
 
   await persistUser(user)
-
   const token = getAuthToken(user)
 
   return res.status(201).json({
     success: true,
-    message: 'Email verified successfully. Phone verification is coming soon.',
+    message: 'Email verified successfully.',
     token,
     user: {
       id: user.id,
