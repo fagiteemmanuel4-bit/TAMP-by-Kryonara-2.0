@@ -265,7 +265,7 @@ app.post('/api/auth/register', async (req, res, next) => {
     const registration = {
       id: makeId('user'), name: String(name).trim(), email: normalizedEmail,
       phone: phone ? String(phone).trim() : null, country: String(country || '').slice(0, 80) || null,
-      passwordHash: await bcrypt.hash(password, 12), role: 'student', createdAt: new Date().toISOString(),
+      passwordHash: await bcrypt.hash(password, 12), role: 'student', termsAcceptedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
     }
     await savePending(normalizedEmail, code, registration)
     try {
