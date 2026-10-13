@@ -2,7 +2,7 @@
 const hash=async s=>{try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){return'x'+btoa(unescape(encodeURIComponent(s)))}};
 const mb=$('#mb');if(mb)mb.onclick=()=>{const o=$('#n2').classList.toggle('open');mb.setAttribute('aria-expanded',o)};
 document.querySelectorAll('[data-theme-btn]').forEach(b=>b.onclick=()=>tampTheme());
-document.querySelectorAll('form[data-demo]').forEach(f=>f.onsubmit=ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(f)),i=get('tamp_inbox',[]);i.push({form:f.dataset.demo,...d,at:new Date().toISOString()});put('tamp_inbox',i);f.innerHTML='<h3>Thank you</h3><p>'+f.dataset.ok+'</p>'});
+document.querySelectorAll('form[data-demo]').forEach(f=>f.onsubmit=ev=>{ev.preventDefault();f.innerHTML='<h3>Form temporarily unavailable</h3><p>This form is not connected to TAMP support services yet. Your message has not been sent.</p>'});
 const q=$('#cq');if(q)q.oninput=()=>document.querySelectorAll('[data-c]').forEach(c=>c.style.display=c.dataset.c.includes(q.value.toLowerCase())?'':'none');
 const vf=$('#vf');
 if(vf)vf.onsubmit=ev=>{ev.preventDefault();const result=$('#vr');result.textContent='The official certificate registry is not connected yet. Please do not rely on local browser records for certificate verification.';result.setAttribute('role','status')};
