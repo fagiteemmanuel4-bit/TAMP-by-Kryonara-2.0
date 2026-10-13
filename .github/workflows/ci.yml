@@ -19,6 +19,7 @@ jobs:
       - run: npm run build
       - name: Check browser JavaScript syntax
         run: |
+          node --check 'api/[...slug].js'
           node --check public/site/auth.js
           node --check public/site/site.js
           node --check public/site/dashboard.js
