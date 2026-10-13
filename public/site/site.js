@@ -55,7 +55,7 @@ if(df)df.onsubmit=async ev=>{
  if(df.c.value!=='DELETE'){m.textContent='Type DELETE to confirm.';return}
  const button=df.querySelector('button');button.disabled=true;m.textContent='';
  try{const result=await apiRequest('/me/delete',{password:df.p.value});
-  try{localStorage.removeItem('tamp_session');localStorage.removeItem('tamp_users');localStorage.removeItem('tamp_dash_'+session.email);sessionStorage.removeItem('tamp_access_token')}catch{}
+  try{localStorage.removeItem('tamp_session');const users=JSON.parse(localStorage.getItem('tamp_users')||'[]').filter(user=>user.email!==session.email);localStorage.setItem('tamp_users',JSON.stringify(users));localStorage.removeItem('tamp_dash_'+session.email);sessionStorage.removeItem('tamp_access_token')}catch{}
   df.innerHTML='<h3>Account deleted</h3><p>'+esc(result.message||'Your account has been deleted.')+'</p><a class="btn" href="index.html">Back to home</a>';
  }catch(error){m.textContent=error.message;button.disabled=false}
 };
