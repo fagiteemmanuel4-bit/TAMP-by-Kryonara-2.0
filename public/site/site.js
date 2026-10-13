@@ -4,9 +4,8 @@ const mb=$('#mb');if(mb)mb.onclick=()=>{const o=$('#n2').classList.toggle('open'
 document.querySelectorAll('[data-theme-btn]').forEach(b=>b.onclick=()=>tampTheme());
 document.querySelectorAll('form[data-demo]').forEach(f=>f.onsubmit=ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(f)),i=get('tamp_inbox',[]);i.push({form:f.dataset.demo,...d,at:new Date().toISOString()});put('tamp_inbox',i);f.innerHTML='<h3>Thank you</h3><p>'+f.dataset.ok+'</p>'});
 const q=$('#cq');if(q)q.oninput=()=>document.querySelectorAll('[data-c]').forEach(c=>c.style.display=c.dataset.c.includes(q.value.toLowerCase())?'':'none');
-const vf=$('#vf');if(vf)vf.onsubmit=ev=>{ev.preventDefault();const id=$('#vi').value.trim().toUpperCase(),r=$('#vr');let hit=id==='TAMP-DEMO'?{name:'Emmanuel Fagite',course:'Data Analysis (sample)',date:'2026-10-08'}:null;
-try{for(const k of Object.keys(localStorage))if(k.startsWith('tamp_dash_'))(JSON.parse(localStorage[k]).certs||[]).forEach(c=>{if(c.id===id)hit=c})}catch(e){}
-const rev=hit&&hit.status==='revoked';r.style.color=hit&&!rev?'var(--ok)':'var(--bad)';r.textContent=rev?'This certificate has been revoked and is not valid.':hit?'Valid. '+hit.name+' completed '+hit.course+' on '+hit.date+'.':'No certificate found with that ID.';const VL=get('tamp_verifications',[]);VL.push({id,ok:!!hit&&!rev,at:new Date().toISOString()});put('tamp_verifications',VL)};
+const vf=$('#vf');
+if(vf)vf.onsubmit=ev=>{ev.preventDefault();const result=$('#vr');result.textContent='The official certificate registry is not connected yet. Please do not rely on local browser records for certificate verification.';result.setAttribute('role','status')};
 const tokH=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join(''),okPw=a=>a.length>=8&&/\d/.test(a)&&/[a-z]/i.test(a);
 const apiBase=()=>String(window.TAMP_CONFIG?.apiBase||'').replace(/\/$/,'');
 async function apiRequest(path,body){
@@ -49,15 +48,20 @@ if(rf){
     }catch(error){m.textContent=error.message;button.disabled=false}
   }
 }
-const df=$('#df');if(df)df.onsubmit=async ev=>{ev.preventDefault();const s=get('tamp_session',null),m=$('#dm');if(!s)return m.textContent='Log in first to delete your account.';if(df.c.value!=='DELETE')return m.textContent='Type DELETE to confirm.';
-const us=get('tamp_users',[]),u=us.find(x=>x.email===s.email);if(!u||u.pw!==await hash(df.p.value))return m.textContent='Password is incorrect.';
-put('tamp_users',us.filter(x=>x.email!==s.email));try{localStorage.removeItem('tamp_session');localStorage.removeItem('tamp_dash_'+s.email)}catch(e){}df.innerHTML='<h3>Account deleted</h3><p>Your account and learning data have been removed from this device.</p><a class="btn" href="index.html">Back to home</a>'};
+const df=$('#df');
+if(df)df.onsubmit=async ev=>{
+ ev.preventDefault();const session=get('tamp_session',null),token=sessionStorage.getItem('tamp_access_token'),m=$('#dm');
+ if(!session||!token){m.textContent='Please sign in again before deleting your account.';return}
+ if(df.c.value!=='DELETE'){m.textContent='Type DELETE to confirm.';return}
+ const button=df.querySelector('button');button.disabled=true;m.textContent='';
+ try{const result=await apiRequest('/me/delete',{password:df.p.value});
+  try{localStorage.removeItem('tamp_session');localStorage.removeItem('tamp_users');localStorage.removeItem('tamp_dash_'+session.email);sessionStorage.removeItem('tamp_access_token')}catch{}
+  df.innerHTML='<h3>Account deleted</h3><p>'+esc(result.message||'Your account has been deleted.')+'</p><a class="btn" href="index.html">Back to home</a>';
+ }catch(error){m.textContent=error.message;button.disabled=false}
+};
+
 })();
 
-(()=>{const box=document.getElementById('vd');if(!box)return;const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}},put=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const R=()=>{const V=get('tamp_vendor',null);if(!V){box.innerHTML='<form class="authcard" id="vl"><label>Your email<input name="e" type="email" required></label><button class="btn">Open dashboard</button></form>';document.getElementById('vl').onsubmit=ev=>{ev.preventDefault();put('tamp_vendor',{email:ev.target.e.value.trim(),keys:[]});R()};return}
-const sold=V.keys.filter(k=>k.sold).length;box.innerHTML=`<div class="pgc"><div class="card"><b>${V.keys.length}</b><br>keys</div><div class="card"><b>${sold}</b><br>sold</div><div class="card"><b>₦${(sold*2000).toLocaleString()}</b><br>sales value</div></div><button class="btn" id="vk">Request 5 keys (demo)</button><div class="card scroll" style="margin-top:14px"><table><tr><th>Key</th><th>Status</th><th></th></tr>${V.keys.map((k,i)=>`<tr><td>${esc(k.k)}</td><td>${k.sold?'Sold':'In stock'}</td><td>${k.sold?'':`<button class="btn g s" data-i="${i}">Mark sold</button>`}</td></tr>`).join('')||'<tr><td colspan="3">No keys yet.</td></tr>'}</table></div><button class="btn g" id="vo">Sign out</button>`;
-document.getElementById('vk').onclick=()=>{for(let i=0;i<5;i++)V.keys.push({k:'TAMP-'+Math.random().toString(36).slice(2,6).toUpperCase()+'-'+Math.floor(1000+Math.random()*9000),sold:0});put('tamp_vendor',V);R()};
-document.getElementById('vo').onclick=()=>{localStorage.removeItem('tamp_vendor');R()};box.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{V.keys[+b.dataset.i].sold=1;put('tamp_vendor',V);R()})};R()})();
+(()=>{const box=document.getElementById('vd');if(!box)return;box.innerHTML='<div class="card"><h2>Vendor portal not available yet</h2><p>Vendor enrollment keys, sales and payouts are not connected to the secure TAMP backend. This page is disabled to prevent fake keys or sales records from being mistaken for real transactions.</p><a class="btn" href="contact.html">Contact TAMP</a></div>'})();
 
 (()=>{try{if(localStorage.getItem('ck')||document.getElementById('ck'))return;const d=document.createElement('div');d.id='ck';d.setAttribute('role','dialog');d.setAttribute('aria-label','Cookie notice');d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:40;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;max-width:620px;box-shadow:0 6px 20px rgba(0,0,0,.2)';d.innerHTML='<span>We use cookies and browser storage to make this site work. <a href="cookies.html">Learn more</a></span><button class="btn s" id="cko">Accept</button>';document.body.append(d);document.getElementById('cko').onclick=()=>{d.remove();localStorage.setItem('ck','1')}}catch(e){}})();
