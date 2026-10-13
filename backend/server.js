@@ -321,6 +321,16 @@ app.get('/api/health', async (req, res) => {
   })
 })
 
+function emailDeliveryFailureMessage(error, purpose = 'verification') {
+  const detail = String(error?.message || '');
+  if (/API access from non-browser environments is currently disabled/i.test(detail)) {
+    return 'Email verification is temporarily unavailable. The site administrator must enable EmailJS API access for non-browser applications in EmailJS Dashboard → Account → Security, then try again.';
+  }
+  return purpose === 'reset'
+    ? 'We could not send the password-reset email right now. Please try again later.'
+    : 'We could not send your verification email right now. Please try again later.';
+}
+
 app.post('/api/auth/register', async (req, res, next) => {
   try {
     if (!requirePersistentDb(res)) return
@@ -344,8 +354,8 @@ app.post('/api/auth/register', async (req, res, next) => {
       await sendEmailCode({ email: normalizedEmail, code })
     } catch (error) {
       await updatePending(normalizedEmail, { remove: true })
-      console.error('Email verification delivery failed:', error.message)
-      return res.status(503).json({ message: 'We could not send your verification email. Please try again later.' })
+      console.error('Email verification delivery failed:', /API access from non-browser environments is currently disabled/i.test(String(error?.message || '')) ? 'EMAILJS_SERVER_ACCESS_DISABLED' : 'EMAIL_PROVIDER_REJECTED')
+      return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.status(200).json({ success: true, message: 'Verification code sent to your email.', email: normalizedEmail, expiresInSeconds: 600 })
   } catch (error) {
@@ -370,8 +380,8 @@ app.post('/api/auth/resend', async (req, res, next) => {
       await sendEmailCode({ email, code })
     } catch (error) {
       await updatePending(email, { remove: true })
-      console.error('Verification resend failed:', error.message)
-      return res.status(503).json({ message: 'We could not send a new code. Please try signing up again later.' })
+      console.error('Verification resend failed:', /API access from non-browser environments is currently disabled/i.test(String(error?.message || '')) ? 'EMAILJS_SERVER_ACCESS_DISABLED' : 'EMAIL_PROVIDER_REJECTED')
+      return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.json({ success: true, message: 'A new verification code has been sent.', expiresInSeconds: 600 })
   } catch (error) { next(error) }
