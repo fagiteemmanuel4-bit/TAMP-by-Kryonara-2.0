@@ -326,8 +326,8 @@ app.post('/api/auth/forgot', async (req, res, next) => {
       try { await sendPasswordResetEmail({ email, resetUrl }) }
       catch (error) {
         await consumeReset(sha256(token))
+        // Keep the response identical for known and unknown accounts to prevent email enumeration.
         console.error('Password reset email delivery failed:', error.message)
-        return res.status(503).json({ message: 'We could not send the reset email. Please try again later.' })
       }
     }
     return res.json({ success: true, message: 'If an account exists, a password reset email will be sent.' })
