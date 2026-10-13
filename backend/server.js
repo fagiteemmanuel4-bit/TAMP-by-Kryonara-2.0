@@ -3,476 +3,386 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { getSupabaseClient, isSupabaseConfigured } from './src/config/supabase.js'
 import { sendEmailCode, sendPasswordResetEmail } from './src/services/email.js'
 
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 5000
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'dev-secret-change-me')
+const PORT = Number(process.env.PORT || 5000)
+const isProduction = process.env.NODE_ENV === 'production'
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? '' : 'dev-secret-change-me')
 if (!JWT_SECRET) throw new Error('JWT_SECRET must be configured in production.')
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+if (isProduction && !isSupabaseConfigured) throw new Error('Supabase must be configured in production; in-memory storage is disabled.')
 
-const allowedOrigins = String(process.env.ALLOWED_ORIGINS || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173,http://localhost:5000'))
+const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '')
+const allowedOrigins = String(process.env.ALLOWED_ORIGINS || (isProduction ? '' : 'http://localhost:5173,http://localhost:5000'))
   .split(',').map((origin) => origin.trim()).filter(Boolean)
-if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
-  throw new Error('ALLOWED_ORIGINS must list the deployed frontend origin in production.')
-}
+if (isProduction && allowedOrigins.length === 0) throw new Error('ALLOWED_ORIGINS must list exact frontend origins in production.')
+
+app.disable('x-powered-by')
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
     return callback(new Error('Origin not allowed by CORS'))
   },
-  credentials: true,
+  credentials: false,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
-app.use(express.json())
+app.use(express.json({ limit: '32kb' }))
 
-const fallbackDb = {
-  users: [],
-  verificationCodes: [],
-  resetTokens: [],
-}
+const fallback = { users: [], pending: [], resets: [] }
+const RATE_WINDOW_MS = 15 * 60 * 1000
+const RATE_LIMIT = 12
+const rateBuckets = new Map()
+app.use('/api/auth', (req, res, next) => {
+  const key = `${req.ip || 'unknown'}:${req.path}`
+  const now = Date.now()
+  let entry = rateBuckets.get(key)
+  if (!entry || now >= entry.resetAt) entry = { count: 0, resetAt: now + RATE_WINDOW_MS }
+  entry.count += 1
+  rateBuckets.set(key, entry)
+  if (rateBuckets.size > 5000) {
+    for (const [k, v] of rateBuckets) if (now >= v.resetAt) rateBuckets.delete(k)
+  }
+  res.setHeader('RateLimit-Limit', String(RATE_LIMIT))
+  res.setHeader('RateLimit-Remaining', String(Math.max(0, RATE_LIMIT - entry.count)))
+  if (entry.count > RATE_LIMIT) return res.status(429).json({ message: 'Too many requests. Please wait and try again.' })
+  next()
+})
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
-const generateCode = () => String(Math.floor(100000 + Math.random() * 900000))
-const makeId = (prefix = 'id') => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-
-async function persistUser(user) {
-  if (isSupabaseConfigured) {
-    const supabase = getSupabaseClient()
-    try {
-      const { error } = await supabase.from('users').upsert({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone || null,
-        country: user.country || null,
-        nin_last_4: user.ninLast4 || null,
-        password_hash: user.passwordHash,
-        role: user.role,
-        created_at: user.createdAt,
-        updated_at: new Date().toISOString(),
-      })
-
-      if (!error) return user
-    } catch (error) {
-      console.warn('Supabase upsert failed, falling back to local memory store:', error.message)
-    }
+const sha256 = (value) => createHash('sha256').update(String(value)).digest('hex')
+const generateCode = () => String(randomInt(100000, 1000000))
+const generateToken = () => randomBytes(32).toString('hex')
+const makeId = (prefix = 'id') => `${prefix}_${randomBytes(12).toString('hex')}`
+const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)
+const validPassword = (password) => typeof password === 'string' && password.length >= 10 && password.length <= 128
+const db = () => {
+  const client = getSupabaseClient()
+  if (client) return client
+  if (isProduction) throw new Error('Persistent database is unavailable.')
+  return null
+}
+const requirePersistentDb = (res) => {
+  if (isProduction && !isSupabaseConfigured) {
+    res.status(503).json({ message: 'The authentication database is not configured.' })
+    return false
   }
-
-  fallbackDb.users.push(user)
-  return user
+  return true
 }
 
 async function findUserByEmail(email) {
-  const normalizedEmail = normalizeEmail(email)
-
-  if (isSupabaseConfigured) {
-    const supabase = getSupabaseClient()
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', normalizedEmail)
-        .maybeSingle()
-
-      if (!error && data) {
-        return data
-      }
-    } catch (error) {
-      console.warn('Supabase lookup failed, falling back to local memory store:', error.message)
-    }
+  const normalized = normalizeEmail(email)
+  const client = db()
+  if (client) {
+    const { data, error } = await client.from('tamp_users').select('*').eq('email', normalized).maybeSingle()
+    if (error) throw error
+    return data
   }
+  return fallback.users.find((user) => normalizeEmail(user.email) === normalized) || null
+}
 
-  return fallbackDb.users.find((user) => normalizeEmail(user.email) === normalizedEmail) || null
+async function saveUser(user) {
+  const client = db()
+  if (client) {
+    const { data, error } = await client.from('tamp_users').insert({
+      id: user.id, name: user.name, email: user.email, phone: user.phone,
+      country: user.country, password_hash: user.passwordHash, role: user.role,
+      created_at: user.createdAt, updated_at: user.createdAt,
+    }).select('*').single()
+    if (error) throw error
+    return data
+  }
+  if (fallback.users.some((u) => u.email === user.email)) throw new Error('An account already exists for this email.')
+  fallback.users.push(user)
+  return user
+}
+
+async function savePending(email, code, registration) {
+  const record = { email, code_hash: sha256(code), registration, attempts: 0, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }
+  const client = db()
+  if (client) {
+    const { error } = await client.from('tamp_pending_registrations').upsert(record, { onConflict: 'email' })
+    if (error) throw error
+    return
+  }
+  fallback.pending = fallback.pending.filter((item) => item.email !== email)
+  fallback.pending.push({ email, codeHash: record.code_hash, registration, attempts: 0, createdAt: Date.now(), expiresAt: Date.now() + 600000 })
+}
+
+async function getPending(email) {
+  const client = db()
+  if (client) {
+    const { data, error } = await client.from('tamp_pending_registrations').select('*').eq('email', email).maybeSingle()
+    if (error) throw error
+    return data ? { email: data.email, codeHash: data.code_hash, registration: data.registration, attempts: data.attempts, expiresAt: new Date(data.expires_at).getTime() } : null
+  }
+  return fallback.pending.find((item) => item.email === email) || null
+}
+
+async function updatePending(email, patch) {
+  const client = db()
+  if (client) {
+    const update = {}
+    if (patch.attempts !== undefined) update.attempts = patch.attempts
+    if (patch.remove) {
+      const { error } = await client.from('tamp_pending_registrations').delete().eq('email', email)
+      if (error) throw error
+      return
+    }
+    const { error } = await client.from('tamp_pending_registrations').update(update).eq('email', email)
+    if (error) throw error
+    return
+  }
+  if (patch.remove) fallback.pending = fallback.pending.filter((item) => item.email !== email)
+  else {
+    const entry = fallback.pending.find((item) => item.email === email)
+    if (entry && patch.attempts !== undefined) entry.attempts = patch.attempts
+  }
+}
+
+async function saveReset(email, token) {
+  const record = { token_hash: sha256(token), email, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), used_at: null }
+  const client = db()
+  if (client) {
+    const { error } = await client.from('tamp_password_resets').insert(record)
+    if (error) throw error
+    return
+  }
+  fallback.resets.push({ ...record, expiresAt: Date.now() + 1800000, used: false })
+}
+
+async function findReset(token) {
+  const hash = sha256(token)
+  const client = db()
+  if (client) {
+    const { data, error } = await client.from('tamp_password_resets').select('*').eq('token_hash', hash).is('used_at', null).maybeSingle()
+    if (error) throw error
+    if (!data || Date.now() >= new Date(data.expires_at).getTime()) return null
+    return { email: data.email, tokenHash: hash }
+  }
+  const item = fallback.resets.find((r) => r.token_hash === hash && !r.used && Date.now() < r.expiresAt)
+  return item ? { email: item.email, tokenHash: hash } : null
+}
+
+async function consumeReset(tokenHash) {
+  const client = db()
+  if (client) {
+    const { error } = await client.from('tamp_password_resets').update({ used_at: new Date().toISOString() }).eq('token_hash', tokenHash).is('used_at', null)
+    if (error) throw error
+    return
+  }
+  const item = fallback.resets.find((r) => r.token_hash === tokenHash)
+  if (item) item.used = true
 }
 
 async function updateUserPassword(email, passwordHash) {
-  const normalizedEmail = normalizeEmail(email)
-
-  if (isSupabaseConfigured) {
-    const supabase = getSupabaseClient()
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
-        .eq('email', normalizedEmail)
-
-      if (!error) return true
-    } catch (error) {
-      console.warn('Supabase password update failed, falling back to local memory store:', error.message)
-    }
+  const client = db()
+  if (client) {
+    const { data, error } = await client.from('tamp_users').update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('email', email).select('id').maybeSingle()
+    if (error) throw error
+    return Boolean(data)
   }
-
-  const user = fallbackDb.users.find((item) => normalizeEmail(item.email) === normalizedEmail)
+  const user = fallback.users.find((item) => item.email === email)
   if (!user) return false
   user.passwordHash = passwordHash
   return true
 }
 
+function publicUser(user) {
+  return { id: user.id, name: user.name, email: user.email, role: user.role || 'student', phone: user.phone || null, country: user.country || null }
+}
 function getAuthToken(user) {
-  return jwt.sign(
-    {
-      sub: user.id,
-      email: user.email,
-      role: user.role || 'student',
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  )
+  return jwt.sign({ sub: user.id, email: user.email, role: user.role || 'student' }, JWT_SECRET, { expiresIn: '2h', issuer: 'tamp-api', audience: 'tamp-app' })
 }
-
-function requireAdmin(req, res, next) {
-  if (!req.user || !['admin', 'super'].includes(req.user.role)) {
-    return res.status(403).json({ message: 'Administrator access required.' })
-  }
-  next()
-}
-
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
-
-  if (!token) {
-    return res.status(401).json({ message: 'Authentication required' })
-  }
-
+  if (!token) return res.status(401).json({ message: 'Authentication required.' })
   try {
-    const payload = jwt.verify(token, JWT_SECRET)
-    req.user = payload
+    req.user = jwt.verify(token, JWT_SECRET, { issuer: 'tamp-api', audience: 'tamp-app' })
     next()
-  } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token' })
+  } catch {
+    return res.status(401).json({ message: 'Invalid or expired token.' })
   }
 }
-
-app.get('/api/health', (req, res) => {
-  res.json({
-    ok: true,
-    message: 'TAMP backend is running',
-    mode: isSupabaseConfigured ? 'supabase' : 'local-memory',
-    phoneVerification: 'coming_soon',
-  })
-})
-
-app.post('/api/auth/register', async (req, res) => {
-  const { name, email, phone, country, nin, password, acceptedTerms } = req.body || {}
-
-  if (!name || !email || !password || !acceptedTerms) {
-    return res.status(400).json({ message: 'Name, email, password and acceptedTerms are required.' })
-  }
-  if (String(password).length < 8) {
-    return res.status(400).json({ message: 'Password must be at least 8 characters.' })
-  }
-
-  const normalizedEmail = normalizeEmail(email)
-  const existingUser = await findUserByEmail(normalizedEmail)
-  if (existingUser) {
-    return res.status(409).json({ message: 'An account already exists for this email.' })
-  }
-
-  // Remove expired/used pending codes so stale registrations cannot be verified.
-  const now = Date.now()
-  fallbackDb.verificationCodes = fallbackDb.verificationCodes.filter(
-    (entry) => !entry.used && now - new Date(entry.createdAt).getTime() < 10 * 60 * 1000
-  )
-
-  const code = generateCode()
-  const passwordHash = await bcrypt.hash(password, 12)
-  const registration = {
-    name: String(name).trim(),
-    email: normalizedEmail,
-    phone: phone ? String(phone).trim() : null,
-    country: country ? String(country).trim() : null,
-    ninLast4: nin ? String(nin).slice(-4) : null,
-    passwordHash,
-    role: 'student',
-    createdAt: new Date().toISOString(),
-  }
-
+async function requireAdmin(req, res, next) {
+  if (!req.user || !['admin', 'super'].includes(req.user.role)) return res.status(403).json({ message: 'Administrator access required.' })
   try {
-    const result = await sendEmailCode({ email: normalizedEmail, code })
-    if (result.simulated) {
-      throw new Error('EmailJS returned simulated delivery; refusing to claim that an email was sent.')
+    const user = await findUserByEmail(req.user.email)
+    if (!user || !['admin', 'super'].includes(user.role)) return res.status(403).json({ message: 'Administrator access required.' })
+    req.admin = user
+    next()
+  } catch (error) { next(error) }
+}
+
+app.get('/api/health', (req, res) => res.json({ ok: true, service: 'tamp-api', storage: isSupabaseConfigured ? 'persistent' : 'development-memory', emailConfigured: Boolean(process.env.EMAILJS_SERVICE_ID && process.env.EMAILJS_TEMPLATE_ID && process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY) }))
+
+app.post('/api/auth/register', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const { name, email, phone, country, password, acceptedTerms } = req.body || {}
+    const normalizedEmail = normalizeEmail(email)
+    if (!String(name || '').trim() || String(name).trim().length > 100 || !validEmail(normalizedEmail) || !password || !acceptedTerms) {
+      return res.status(400).json({ message: 'Enter your name, a valid email, password and accept the Terms and Privacy Policy.' })
     }
+    if (!validPassword(password)) return res.status(400).json({ message: 'Password must be 10–128 characters.' })
+    if (phone && !/^\+?\d{10,15}$/.test(String(phone).replace(/[\s-]/g, ''))) return res.status(400).json({ message: 'Enter a valid phone number including country code.' })
+    const existing = await findUserByEmail(normalizedEmail)
+    if (existing) return res.status(409).json({ message: 'An account already exists for this email.' })
+    const code = generateCode()
+    const registration = {
+      id: makeId('user'), name: String(name).trim(), email: normalizedEmail,
+      phone: phone ? String(phone).trim() : null, country: String(country || '').slice(0, 80) || null,
+      passwordHash: await bcrypt.hash(password, 12), role: 'student', createdAt: new Date().toISOString(),
+    }
+    await sendEmailCode({ email: normalizedEmail, code })
+    await savePending(normalizedEmail, code, registration)
+    return res.status(200).json({ success: true, message: 'Verification code sent to your email.', email: normalizedEmail, expiresInSeconds: 600 })
   } catch (error) {
-    console.error('Email verification delivery failed:', error.message)
-    return res.status(503).json({
-      success: false,
-      code: 'EMAIL_DELIVERY_FAILED',
-      message: 'We could not send your verification email. Please try again later or contact support.',
-    })
+    if (error?.message?.includes('EmailJS')) console.error('Email verification delivery failed:', error.message)
+    next(error)
   }
-
-  fallbackDb.verificationCodes.push({
-    email: normalizedEmail,
-    code,
-    registration,
-    createdAt: new Date().toISOString(),
-    used: false,
-    attempts: 0,
-  })
-
-  return res.status(200).json({
-    success: true,
-    message: 'Verification code sent to your email.',
-    email: normalizedEmail,
-    expiresInSeconds: 600,
-  })
 })
 
-app.post('/api/auth/verify', async (req, res) => {
-  const { email, emailCode } = req.body || {}
-  const normalizedEmail = normalizeEmail(email)
-
-  if (!normalizedEmail || !emailCode) {
-    return res.status(400).json({ message: 'Email and verification code are required.' })
-  }
-
-  const pending = fallbackDb.verificationCodes.find(
-    (entry) => entry.email === normalizedEmail && !entry.used
-  )
-
-  if (!pending || Date.now() - new Date(pending.createdAt).getTime() >= 10 * 60 * 1000) {
-    return res.status(400).json({ message: 'Verification code is invalid or expired. Please sign up again.' })
-  }
-
-  pending.attempts = (pending.attempts || 0) + 1
-  if (pending.attempts > 5) {
-    pending.used = true
-    return res.status(429).json({ message: 'Too many incorrect attempts. Please sign up again.' })
-  }
-  if (pending.code !== String(emailCode).trim()) {
-    return res.status(400).json({ message: 'Incorrect verification code.' })
-  }
-
-  pending.used = true
-  const existingUser = await findUserByEmail(normalizedEmail)
-  if (existingUser) {
-    const token = getAuthToken(existingUser)
-    return res.status(200).json({
-      success: true,
-      message: 'This account is already registered.',
-      token,
-      user: {
-        id: existingUser.id,
-        email: existingUser.email,
-        name: existingUser.name,
-        role: existingUser.role || 'student',
-      },
-    })
-  }
-
-  const registration = pending.registration
-  if (!registration) {
-    return res.status(500).json({ message: 'Registration details expired. Please sign up again.' })
-  }
-
-  const user = {
-    id: makeId('user'),
-    ...registration,
-  }
-
-  await persistUser(user)
-  const token = getAuthToken(user)
-
-  return res.status(201).json({
-    success: true,
-    message: 'Email verified successfully.',
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-    },
-  })
-})
-
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {}
-
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' })
-  }
-
-  const user = await findUserByEmail(normalizeEmail(email))
-  if (!user) {
-    return res.status(401).json({ message: 'Invalid credentials.' })
-  }
-
-  const matches = await bcrypt.compare(password, user.passwordHash || user.password_hash)
-  if (!matches) {
-    return res.status(401).json({ message: 'Invalid credentials.' })
-  }
-
-  const token = getAuthToken(user)
-
-  return res.json({
-    success: true,
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role || 'student',
-    },
-  })
-})
-
-app.post('/api/auth/forgot', async (req, res) => {
-  const { email } = req.body || {}
-  if (!email) return res.status(400).json({ message: 'Email is required.' })
-
-  const normalizedEmail = normalizeEmail(email)
-  const user = await findUserByEmail(normalizedEmail)
-
-  const token = makeId('reset')
-  fallbackDb.resetTokens.push({
-    email: normalizedEmail,
-    token,
-    expiresAt: Date.now() + 30 * 60 * 1000,
-    used: false,
-  })
-
-  const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`
-
+app.post('/api/auth/verify', async (req, res, next) => {
   try {
-    await sendPasswordResetEmail({ email: normalizedEmail, resetUrl })
-  } catch (error) {
-    console.error('Password reset email failed:', error)
-  }
-
-  return res.json({
-    success: true,
-    message: 'If the email exists, a reset link has been sent.',
-  })
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.body?.email)
+    const code = String(req.body?.emailCode || '').trim()
+    if (!validEmail(email) || !/^\d{6}$/.test(code)) return res.status(400).json({ message: 'Enter a valid email and 6-digit code.' })
+    const pending = await getPending(email)
+    if (!pending || Date.now() >= pending.expiresAt) {
+      await updatePending(email, { remove: true })
+      return res.status(400).json({ message: 'Verification code is invalid or expired. Please sign up again.' })
+    }
+    if ((pending.attempts || 0) >= 5) {
+      await updatePending(email, { remove: true })
+      return res.status(429).json({ message: 'Too many attempts. Please sign up again.' })
+    }
+    const expected = Buffer.from(pending.codeHash, 'hex')
+    const received = Buffer.from(sha256(code), 'hex')
+    if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+      await updatePending(email, { attempts: (pending.attempts || 0) + 1 })
+      return res.status(400).json({ message: 'Incorrect verification code.' })
+    }
+    if (await findUserByEmail(email)) {
+      await updatePending(email, { remove: true })
+      return res.status(409).json({ message: 'An account already exists for this email. Please log in.' })
+    }
+    const registration = pending.registration
+    const user = { id: registration.id, name: registration.name, email: registration.email, phone: registration.phone, country: registration.country, passwordHash: registration.passwordHash, role: 'student', createdAt: registration.createdAt }
+    const saved = await saveUser(user)
+    await updatePending(email, { remove: true })
+    return res.status(201).json({ success: true, message: 'Email verified successfully.', token: getAuthToken(saved), user: publicUser(saved) })
+  } catch (error) { next(error) }
 })
 
-app.post('/api/auth/reset', async (req, res) => {
-  const { token, password } = req.body || {}
-
-  if (!token || !password) {
-    return res.status(400).json({ message: 'Token and password are required.' })
-  }
-
-  const resetEntry = fallbackDb.resetTokens.find(
-    (entry) => entry.token === token && !entry.used && Date.now() < entry.expiresAt
-  )
-
-  if (!resetEntry) {
-    return res.status(400).json({ message: 'Reset token is invalid or expired.' })
-  }
-
-  resetEntry.used = true
-  const passwordHash = await bcrypt.hash(password, 10)
-  const updated = await updateUserPassword(resetEntry.email, passwordHash)
-
-  if (!updated) {
-    return res.status(404).json({ message: 'User not found for reset.' })
-  }
-
-  return res.json({ success: true, message: 'Password updated successfully.' })
+app.post('/api/auth/login', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.body?.email), password = req.body?.password
+    if (!validEmail(email) || typeof password !== 'string' || !password) return res.status(400).json({ message: 'Enter your email and password.' })
+    const user = await findUserByEmail(email)
+    const hash = user?.password_hash || user?.passwordHash
+    if (!user || !hash || !(await bcrypt.compare(password, hash))) return res.status(401).json({ message: 'Invalid email or password.' })
+    return res.json({ success: true, token: getAuthToken(user), user: publicUser(user) })
+  } catch (error) { next(error) }
 })
 
-app.get('/api/me', requireAuth, async (req, res) => {
-  const existing = await findUserByEmail(req.user.email)
-  if (!existing) {
-    return res.status(404).json({ message: 'User not found.' })
-  }
-
-  return res.json({
-    user: {
-      id: existing.id,
-      name: existing.name,
-      email: existing.email,
-      role: existing.role || 'student',
-      phone: existing.phone || null,
-      country: existing.country || null,
-    },
-  })
+app.post('/api/auth/forgot', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.body?.email)
+    if (!validEmail(email)) return res.status(400).json({ message: 'Enter a valid email address.' })
+    const user = await findUserByEmail(email)
+    if (user) {
+      const token = generateToken()
+      await saveReset(email, token)
+      const resetUrl = `${FRONTEND_URL}/site/reset-password.html?t=${encodeURIComponent(token)}`
+      try { await sendPasswordResetEmail({ email, resetUrl }) }
+      catch (error) {
+        await consumeReset(sha256(token))
+        console.error('Password reset email delivery failed:', error.message)
+        return res.status(503).json({ message: 'We could not send the reset email. Please try again later.' })
+      }
+    }
+    return res.json({ success: true, message: 'If an account exists, a password reset email will be sent.' })
+  } catch (error) { next(error) }
 })
 
-app.get('/api/courses', requireAuth, async (req, res) => {
-  res.json({
-    courses: [
-      { id: 'data-analysis', name: 'Data Analysis', status: 'active' },
-      { id: 'ai-foundations', name: 'AI Foundations', status: 'coming-soon' },
-    ],
-  })
+app.post('/api/auth/reset', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const token = String(req.body?.token || '')
+    const password = req.body?.password
+    if (!token || !validPassword(password)) return res.status(400).json({ message: 'Use a valid reset link and a password of 10–128 characters.' })
+    const reset = await findReset(token)
+    if (!reset) return res.status(400).json({ message: 'Reset link is invalid or expired. Request a new one.' })
+    const updated = await updateUserPassword(reset.email, await bcrypt.hash(password, 12))
+    if (!updated) return res.status(400).json({ message: 'The account could not be updated. Please contact support.' })
+    await consumeReset(reset.tokenHash)
+    return res.json({ success: true, message: 'Password updated. Please log in again.' })
+  } catch (error) { next(error) }
 })
 
-app.get('/api/dashboard', requireAuth, async (req, res) => {
-  const user = await findUserByEmail(req.user.email)
-  res.json({
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      progress: 38,
-      streak: 12,
-      course: 'Data Analysis',
-    },
-  })
+app.post('/api/auth/logout', (req, res) => res.json({ success: true, message: 'Signed out on this device. Token expires within two hours.' }))
+
+app.get('/api/me', requireAuth, async (req, res, next) => {
+  try {
+    const user = await findUserByEmail(req.user.email)
+    if (!user) return res.status(404).json({ message: 'User not found.' })
+    return res.json({ user: publicUser(user) })
+  } catch (error) { next(error) }
 })
 
-app.post('/api/enrollments', requireAuth, async (req, res) => {
-  const { cohortId, keyOrPaymentRef } = req.body || {}
-  res.json({
-    success: true,
-    enrollment: {
-      id: makeId('enrollment'),
-      cohortId: cohortId || 'cohort-1',
-      keyOrPaymentRef: keyOrPaymentRef || 'demo-ref',
-      status: 'active',
-    },
-  })
+app.get('/api/courses', (req, res) => res.json({ courses: [{ id: 'data-analysis', name: 'Data Analysis', status: 'active' }] }))
+
+app.get('/api/dashboard', requireAuth, async (req, res) => res.status(501).json({ message: 'The persistent learning-progress API is not configured yet. Student progress is not being fabricated.' }))
+
+app.post('/api/enrollments', requireAuth, async (req, res) => res.status(501).json({ message: 'Enrollment is unavailable until payment/key verification is connected. No enrollment has been created.' }))
+
+app.post('/api/admin/auth/login', async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    const email = normalizeEmail(req.body?.email), password = req.body?.password
+    const user = validEmail(email) ? await findUserByEmail(email) : null
+    const hash = user?.password_hash || user?.passwordHash
+    if (!user || !['admin', 'super'].includes(user.role) || !hash || !(await bcrypt.compare(String(password || ''), hash))) {
+      return res.status(401).json({ message: 'Invalid admin credentials.' })
+    }
+    return res.json({ success: true, token: getAuthToken(user), user: publicUser(user) })
+  } catch (error) { next(error) }
 })
 
-app.post('/api/admin/auth/login', async (req, res) => {
-  const { email, password } = req.body || {}
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email and password are required.' })
-  }
-
-  const adminUser = await findUserByEmail(normalizeEmail(email))
-  if (!adminUser || !['admin', 'super'].includes(adminUser.role) ||
-      !(await bcrypt.compare(password, adminUser.passwordHash || adminUser.password_hash))) {
-    return res.status(401).json({ message: 'Invalid admin credentials.' })
-  }
-
-  const token = getAuthToken(adminUser)
-  return res.json({ success: true, token, user: { id: adminUser.id, email: adminUser.email, role: 'admin' } })
+app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const client = db()
+    if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
+    const { count, error } = await client.from('tamp_users').select('id', { count: 'exact', head: true })
+    if (error) throw error
+    return res.json({ students: count || 0, enrollments: null, pendingReview: null, revenue: null, note: 'Enrollment, review and revenue metrics are withheld until their persistent tables are implemented.' })
+  } catch (error) { next(error) }
 })
 
-app.get('/api/admin/overview', requireAuth, requireAdmin, async (req, res) => {
-  res.json({
-    students: 1248,
-    enrollments: 3412,
-    pendingReview: 29,
-    revenue: 87400,
-    role: req.user.role || 'admin',
-  })
+app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const client = db()
+    if (!client) return res.status(503).json({ message: 'Persistent admin data is not configured.' })
+    const { data, error } = await client.from('tamp_users').select('id,name,email,role,created_at').order('created_at', { ascending: false }).limit(500)
+    if (error) throw error
+    return res.json({ students: (data || []).map((user) => ({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.created_at, status: 'active' })) })
+  } catch (error) { next(error) }
 })
 
-app.get('/api/admin/students', requireAuth, requireAdmin, async (req, res) => {
-  const users = fallbackDb.users.map((user) => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role || 'student',
-    status: 'active',
-  }))
-
-  res.json({ students: users })
+app.use((req, res) => res.status(404).json({ message: 'API endpoint not found.' }))
+app.use((error, req, res, next) => {
+  console.error('Unhandled API error:', error?.message || error)
+  if (res.headersSent) return next(error)
+  return res.status(500).json({ message: 'An unexpected server error occurred.' })
 })
 
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err)
-  res.status(500).json({ message: 'Internal server error' })
-})
-
-app.listen(PORT, () => {
-  console.log(`TAMP backend listening on http://localhost:${PORT}`)
-})
+app.listen(PORT, () => console.log(`TAMP API listening on port ${PORT}; storage=${isSupabaseConfigured ? 'persistent' : 'development-memory'}`))
