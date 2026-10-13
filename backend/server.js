@@ -308,7 +308,7 @@ app.post('/api/auth/verify', async (req, res, next) => {
       return res.status(409).json({ message: 'An account already exists for this email. Please log in.' })
     }
     const registration = pending.registration
-    const user = { id: registration.id, name: registration.name, email: registration.email, phone: registration.phone, country: registration.country, passwordHash: registration.passwordHash, role: 'student', createdAt: registration.createdAt }
+    const user = { id: registration.id, name: registration.name, email: registration.email, phone: registration.phone, country: registration.country, passwordHash: registration.passwordHash, role: 'student', termsAcceptedAt: registration.termsAcceptedAt, createdAt: registration.createdAt }
     const saved = await saveUser(user)
     await updatePending(email, { remove: true })
     return res.status(201).json({ success: true, message: 'Email verified successfully.', token: getAuthToken(saved), user: publicUser(saved) })
