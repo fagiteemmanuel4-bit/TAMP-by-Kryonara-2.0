@@ -1,2 +1,7 @@
-// Front-end settings. A backend developer: set demo:false to hide all demo buttons.
-window.TAMP_CONFIG={demo:true,mode:'mock',apiBase:'/api/v1'};
+// Set this to the deployed backend URL, including /api, before enabling live authentication.
+// Example: https://tamp-api.example.com/api
+window.TAMP_CONFIG = {
+  mode: 'backend',
+  apiBase: 'https://YOUR-BACKEND-DOMAIN.example/api',
+  demo: false,
+};
