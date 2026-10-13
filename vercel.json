@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/[...slug].js": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     { "source": "/ADMIN*", "destination": "/index.html" },
     { "source": "/login", "destination": "/index.html" },
