@@ -10,7 +10,7 @@ const LIVE_OVERVIEW={students:0};
 const NOW=()=>new Date().toISOString().slice(0,16).replace('T',' '),TODAY=()=>new Date().toISOString().slice(0,10),money=n=>'₦'+Number(n).toLocaleString(),rnd=n=>Math.random().toString(36).slice(2,2+n).toUpperCase(),nid=k=>Math.max(0,...DB[k].map(x=>x.id))+1;
 const NAV=[['Overview',[['overview','Overview']]],['People',[['students','Students']]]];
 const PERMS={reviewer:['overview','students','submissions','certificates','verifications'],finance:['overview','payments','keys','vendors','reports'],support:['overview','students','support','announcements','templates','outbox'],content:['overview','courses','cohorts','topics','assignments','exams','ai','pages','announcements']};
-const can=k=>!!me&&(me.role==='super'||(PERMS[me.role]||[]).includes(k));
+const can=k=>!!me&&(['admin','super'].includes(me.role)||(PERMS[me.role]||[]).includes(k));
 const log=(a,t,d)=>{DB.audit.push({id:nid('audit'),time:NOW(),admin:me?me.email:'system',action:a,target:t,detail:d||''})};
 const toast=t=>{const e=document.createElement('div');e.className='t';e.textContent=t;$('#ts').append(e);setTimeout(()=>e.remove(),3500)};
 const dg=$('#dg');
