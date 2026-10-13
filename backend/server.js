@@ -182,13 +182,19 @@ async function consumeReset(tokenHash) {
 async function updateUserPassword(email, passwordHash) {
   const client = db()
   if (client) {
-    const { data, error } = await client.from('tamp_users').update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('email', email).select('id').maybeSingle()
+    const existing = await findUserByEmail(email)
+    if (!existing) return false
+    const currentVersion = Number(existing.session_version || 0)
+    const { data, error } = await client.from('tamp_users')
+      .update({ password_hash: passwordHash, session_version: currentVersion + 1, updated_at: new Date().toISOString() })
+      .eq('email', email).select('id').maybeSingle()
     if (error) throw error
     return Boolean(data)
   }
   const user = fallback.users.find((item) => item.email === email)
   if (!user) return false
   user.passwordHash = passwordHash
+  user.sessionVersion = Number(user.sessionVersion || 0) + 1
   return true
 }
 
@@ -196,17 +202,25 @@ function publicUser(user) {
   return { id: user.id, name: user.name, email: user.email, role: user.role || 'student', phone: user.phone || null, country: user.country || null }
 }
 function getAuthToken(user) {
-  return jwt.sign({ sub: user.id, email: user.email, role: user.role || 'student' }, JWT_SECRET, { expiresIn: '2h', issuer: 'tamp-api', audience: 'tamp-app' })
+  return jwt.sign({ sub: user.id, email: user.email, role: user.role || 'student', sv: Number(user.session_version ?? user.sessionVersion ?? 0) }, JWT_SECRET, { expiresIn: '2h', issuer: 'tamp-api', audience: 'tamp-app' })
 }
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) return res.status(401).json({ message: 'Authentication required.' })
   try {
-    req.user = jwt.verify(token, JWT_SECRET, { issuer: 'tamp-api', audience: 'tamp-app' })
+    const payload = jwt.verify(token, JWT_SECRET, { issuer: 'tamp-api', audience: 'tamp-app' })
+    const user = await findUserByEmail(payload.email)
+    if (!user || String(payload.sub) !== String(user.id) || Number(payload.sv || 0) !== Number(user.session_version ?? user.sessionVersion ?? 0)) {
+      return res.status(401).json({ message: 'Your session is no longer valid. Please sign in again.' })
+    }
+    req.user = { ...payload, role: user.role || 'student' }
     next()
-  } catch {
-    return res.status(401).json({ message: 'Invalid or expired token.' })
+  } catch (error) {
+    if (error?.name === 'JsonWebTokenError' || error?.name === 'TokenExpiredError' || error?.name === 'NotBeforeError') {
+      return res.status(401).json({ message: 'Invalid or expired token.' })
+    }
+    next(error)
   }
 }
 async function requireAdmin(req, res, next) {
