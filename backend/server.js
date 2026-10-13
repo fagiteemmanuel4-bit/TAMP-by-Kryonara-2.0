@@ -224,6 +224,23 @@ async function updateUserPassword(email, passwordHash) {
   return true
 }
 
+async function incrementSessionVersion(email) {
+  const client = db()
+  if (client) {
+    const existing = await findUserByEmail(email)
+    if (!existing) return false
+    const { data, error } = await client.from('tamp_users')
+      .update({ session_version: Number(existing.session_version || 0) + 1, updated_at: new Date().toISOString() })
+      .eq('email', email).select('id').maybeSingle()
+    if (error) throw error
+    return Boolean(data)
+  }
+  const user = fallback.users.find((item) => item.email === email)
+  if (!user) return false
+  user.sessionVersion = Number(user.sessionVersion || 0) + 1
+  return true
+}
+
 function publicUser(user) {
   return { id: user.id, name: user.name, email: user.email, role: user.role || 'student', phone: user.phone || null, country: user.country || null }
 }
@@ -419,7 +436,13 @@ app.post('/api/auth/change-password', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-app.post('/api/auth/logout', (req, res) => res.json({ success: true, message: 'Signed out on this device. Token expires within two hours.' }))
+app.post('/api/auth/logout', requireAuth, async (req, res, next) => {
+  try {
+    if (!requirePersistentDb(res)) return
+    await incrementSessionVersion(normalizeEmail(req.user.email))
+    return res.json({ success: true, message: 'Signed out. Your current session has been invalidated.' })
+  } catch (error) { next(error) }
+})
 
 app.get('/api/me', requireAuth, async (req, res, next) => {
   try {
