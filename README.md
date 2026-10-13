@@ -39,6 +39,7 @@ See `backend/.env.example` and fill in:
 - `EMAILJS_PRIVATE_KEY`
 - `JWT_SECRET`
 - `FRONTEND_URL`
+- `ALLOWED_ORIGINS` (comma-separated exact frontend origins; required in production)
 
 ## Current implementation notes
 
@@ -50,8 +51,11 @@ See `backend/.env.example` and fill in:
 ## Deployment
 
 - Frontend: Vercel
-- Backend: Vercel or another Node-compatible host
-- SPA routing is handled in `vercel.json`
+- Backend: deploy `backend/` as a persistent Node.js service with a stable HTTPS URL. Do not rely on in-memory registration/reset state in a serverless deployment.
+- Set the backend environment variables from `backend/.env.example` in the backend host. Production must have `JWT_SECRET`, `ALLOWED_ORIGINS`, Supabase credentials and EmailJS credentials configured.
+- Set `window.TAMP_CONFIG.apiBase` in `public/site/config.js` to the backend URL ending in `/api` (for example, `https://api.example.com/api`). Do not put EmailJS private keys or the Supabase service-role key in frontend files.
+- Verify signup with a real inbox, then verify login, expired/incorrect code handling and provider errors before inviting students.
+- SPA routing is handled in `vercel.json`; it does not automatically deploy the Express backend.
 
 ## GitHub push
 
