@@ -145,9 +145,9 @@ The implementation is currently split: the UI describes much of that flow, but s
 - Result: failures may remain invisible until students complain. Add error monitoring, backup/restore drills, operational dashboards, a support inbox tied to the backend and clear response targets.
 
 #### 15. UX and accessibility choices can hurt trust
-- `public/site/protect.js` blocks copy, cut, context menus and several keyboard shortcuts. This is not meaningful security and can interfere with password managers, accessibility, study notes and normal browser use.
-- Demo placeholders, local-only state and inconsistent navigation can make a professional service feel unreliable.
-- Remove intrusive copy protection; protect paid content with server authorization and focus on accessibility, responsive testing and clear error messages.
+- The intrusive copy/cut/context-menu/keyboard blocking has been removed from `public/site/protect.js`; normal browser accessibility and password-manager behaviour are restored.
+- Demo placeholders, local-only study state and inconsistent navigation can still make a professional service feel unreliable.
+- Protect paid content with server authorization and focus on accessibility, responsive testing and clear error messages.
 
 #### 16. SEO and maintainability are weakened by the split architecture
 - The deployed React shell uses iframes to show static HTML pages, while a second React UI is present but unused.
