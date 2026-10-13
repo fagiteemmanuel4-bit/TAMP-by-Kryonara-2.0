@@ -15,8 +15,9 @@ Changes made during this pass:
 - EmailJS now fails clearly when required environment values are missing, has a 10-second timeout, and returns provider errors to the backend.
 - Registration no longer reports success when EmailJS delivery fails.
 - Email verification codes expire after 10 minutes and incorrect attempts are capped at five.
-- Sign-up, email verification, and login pages now call the backend API and the fake phone-code requirement/demo code have been removed.
-- The backend URL is intentionally a required deployment setting in `public/site/config.js`. It is blank right now because the actual deployed API URL is not available in the repository. **Live authentication cannot work until the backend is deployed, its environment variables are configured, and that URL is entered.**
+- Sign-up, email verification, and login pages now call the backend API; the fake phone-code requirement and demo verification code were removed.
+- Admin login and existing admin endpoints now check stored roles. Production startup now requires `JWT_SECRET` and an `ALLOWED_ORIGINS` allowlist.
+- The backend URL is intentionally a required deployment setting in `public/site/config.js`. It is blank right now because no deployed API URL is present in the repo. **Live authentication cannot work until the backend is deployed, its environment variables are configured, and that URL is entered.**
 
 ## Findings by severity
 
@@ -62,13 +63,12 @@ Changes made during this pass:
 - Backend reset tokens are in memory and the reset handler does not revoke existing sessions.
 - Result: password recovery can claim to work without delivering an email or changing the actual backend password. Connect the UI to the API, unify the reset URL, persist hashed/single-use tokens, and revoke sessions after a reset.
 
-#### 7. Weak production security controls
-- Backend CORS currently allows any origin (`origin: true`).
-- JWT signing has a fallback secret (`dev-secret-change-me`) if `JWT_SECRET` is missing.
-- There is no server-side rate limiter for login, registration, verification, or reset endpoints.
-- Verification codes and generated identifiers use `Math.random`, not a cryptographically secure random generator.
+#### 7. Weak production security controls — some guardrails added
+- This pass changed CORS to use the `ALLOWED_ORIGINS` allowlist and made production startup fail if the allowlist or `JWT_SECRET` is missing. Set both values in the backend host before deploying; `ALLOWED_ORIGINS` must include the exact frontend origin.
+- There is still no server-side rate limiter for login, registration, verification, or reset endpoints.
+- Verification codes and generated identifiers still use `Math.random`, not a cryptographically secure random generator.
 - There are no visible automated security tests, API tests, or dependency audit gates.
-- Before launch: require a strong production secret at startup, allowlist exact origins, use cryptographic randomness, add rate limiting/lockout, set security headers, and add automated tests and dependency scanning.
+- Before launch: use cryptographic randomness, add rate limiting/lockout, set security headers, and add automated tests and dependency scanning.
 
 #### 8. No database migration or access-policy files are included
 - Source references a Supabase `users` table and writes profile/password fields, but this repository tree has no versioned schema migration or documented production RLS policy.
