@@ -61,3 +61,14 @@ test('registration fails closed when production JWT/database configuration is mi
   const body = await response.json()
   assert.match(body.message, /JWT_SECRET/)
 })
+
+test('protected logout and enrollment endpoints reject anonymous requests', async () => {
+  const logout = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST' })
+  const enrollment = await fetch(`${baseUrl}/api/enrollments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courseId: 'data-analysis' }),
+  })
+  assert.equal(logout.status, 401)
+  assert.equal(enrollment.status, 401)
+})
