@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { getSupabaseClient, isSupabaseConfigured, isSupabaseServerKeyMisconfigured } from './src/config/supabase.js'
-import { sendEmailCode, sendPasswordResetEmail } from './src/services/email.js'
+import { sendPasswordResetEmail } from './src/services/email.js'
+import { sendSignupOtp, resendSignupOtp, verifySignupOtp, isSupabaseOtpConfigured } from './src/services/supabase-auth.js'
 
 dotenv.config()
 
@@ -304,10 +305,7 @@ app.get('/api/health', async (req, res) => {
       ? 'DATABASE_PUBLIC_KEY_USED_AS_SERVER_KEY'
       : 'DATABASE_SERVER_KEY_MISSING'
   }
-  const emailConfigured = Boolean(process.env.EMAILJS_SERVICE_ID &&
-    (process.env.EMAILJS_VERIFICATION_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
-    (process.env.EMAILJS_RESET_TEMPLATE_ID || process.env.EMAILJS_TEMPLATE_ID) &&
-    process.env.EMAILJS_PUBLIC_KEY && process.env.EMAILJS_PRIVATE_KEY)
+  const emailConfigured = isSupabaseOtpConfigured
   const authReady = Boolean(JWT_SECRET && databaseConnected && (!isProduction || allowedOrigins.length > 0))
   const ok = Boolean(authReady && emailConfigured)
   return res.status(ok ? 200 : 503).json({
@@ -343,23 +341,21 @@ app.post('/api/auth/register', async (req, res, next) => {
     if (phone && !/^\+?\d{10,15}$/.test(String(phone).replace(/[\s-]/g, ''))) return res.status(400).json({ message: 'Enter a valid phone number including country code.' })
     const existing = await findUserByEmail(normalizedEmail)
     if (existing) return res.status(409).json({ message: 'An account already exists for this email.' })
-    const code = generateCode()
     const registration = {
       id: makeId('user'), name: String(name).trim(), email: normalizedEmail,
       phone: phone ? String(phone).trim() : null, country: String(country || '').slice(0, 80) || null,
       passwordHash: await bcrypt.hash(password, 12), role: 'student', termsAcceptedAt: new Date().toISOString(), createdAt: new Date().toISOString(),
     }
-    await savePending(normalizedEmail, code, registration)
+    await savePending(normalizedEmail, sha256(randomBytes(32).toString('hex')), registration)
     try {
-      await sendEmailCode({ email: normalizedEmail, code })
+      await sendSignupOtp({ email: normalizedEmail, password, metadata: { name: registration.name } })
     } catch (error) {
       await updatePending(normalizedEmail, { remove: true })
-      console.error('Email verification delivery failed:', /API access from non-browser environments is currently disabled/i.test(String(error?.message || '')) ? 'EMAILJS_SERVER_ACCESS_DISABLED' : 'EMAIL_PROVIDER_REJECTED')
+      console.error('Supabase signup OTP delivery failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
       return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.status(200).json({ success: true, message: 'Verification code sent to your email.', email: normalizedEmail, expiresInSeconds: 600 })
   } catch (error) {
-    if (error?.message?.includes('EmailJS')) console.error('Email verification delivery failed:', error.message)
     next(error)
   }
 })
@@ -374,13 +370,11 @@ app.post('/api/auth/resend', async (req, res, next) => {
       await updatePending(email, { remove: true })
       return res.status(400).json({ message: 'Your registration has expired. Please sign up again.' })
     }
-    const code = generateCode()
-    await savePending(email, code, pending.registration)
+    await savePending(email, sha256(randomBytes(32).toString('hex')), pending.registration)
     try {
-      await sendEmailCode({ email, code })
+      await resendSignupOtp(email)
     } catch (error) {
-      await updatePending(email, { remove: true })
-      console.error('Verification resend failed:', /API access from non-browser environments is currently disabled/i.test(String(error?.message || '')) ? 'EMAILJS_SERVER_ACCESS_DISABLED' : 'EMAIL_PROVIDER_REJECTED')
+      console.error('Supabase signup OTP resend failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
       return res.status(503).json({ message: emailDeliveryFailureMessage(error) })
     }
     return res.json({ success: true, message: 'A new verification code has been sent.', expiresInSeconds: 600 })
@@ -402,11 +396,14 @@ app.post('/api/auth/verify', async (req, res, next) => {
       await updatePending(email, { remove: true })
       return res.status(429).json({ message: 'Too many attempts. Please sign up again.' })
     }
-    const expected = Buffer.from(pending.codeHash, 'hex')
-    const received = Buffer.from(sha256(code), 'hex')
-    if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+    try {
+      await verifySignupOtp({ email, token: code })
+    } catch (error) {
       await updatePending(email, { attempts: (pending.attempts || 0) + 1 })
-      return res.status(400).json({ message: 'Incorrect verification code.' })
+      const detail = String(error?.message || '').toLowerCase()
+      if (/expired|invalid|token/.test(detail)) return res.status(400).json({ message: 'Incorrect or expired verification code. Request a new code and try again.' })
+      console.error('Supabase signup OTP verification failed:', error?.code || error?.name || 'SUPABASE_AUTH_ERROR')
+      return res.status(503).json({ message: 'Email verification is temporarily unavailable. Please try again shortly.' })
     }
     if (await findUserByEmail(email)) {
       await updatePending(email, { remove: true })
