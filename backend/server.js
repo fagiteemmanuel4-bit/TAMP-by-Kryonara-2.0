@@ -239,8 +239,14 @@ app.post('/api/auth/register', async (req, res, next) => {
       phone: phone ? String(phone).trim() : null, country: String(country || '').slice(0, 80) || null,
       passwordHash: await bcrypt.hash(password, 12), role: 'student', createdAt: new Date().toISOString(),
     }
-    await sendEmailCode({ email: normalizedEmail, code })
     await savePending(normalizedEmail, code, registration)
+    try {
+      await sendEmailCode({ email: normalizedEmail, code })
+    } catch (error) {
+      await updatePending(normalizedEmail, { remove: true })
+      console.error('Email verification delivery failed:', error.message)
+      return res.status(503).json({ message: 'We could not send your verification email. Please try again later.' })
+    }
     return res.status(200).json({ success: true, message: 'Verification code sent to your email.', email: normalizedEmail, expiresInSeconds: 600 })
   } catch (error) {
     if (error?.message?.includes('EmailJS')) console.error('Email verification delivery failed:', error.message)
