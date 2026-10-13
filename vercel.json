@@ -6,6 +6,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/:path((?!health$|courses$).*)",
+      "destination": "/api/health?__tamp_path=:path*"
+    },
+    {
       "source": "/ADMIN:slug*",
       "destination": "/index.html"
     },
