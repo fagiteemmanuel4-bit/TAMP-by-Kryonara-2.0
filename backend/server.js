@@ -191,12 +191,17 @@ async function findReset(token) {
 async function consumeReset(tokenHash) {
   const client = db()
   if (client) {
-    const { error } = await client.from('tamp_password_resets').update({ used_at: new Date().toISOString() }).eq('token_hash', tokenHash).is('used_at', null)
+    const { data, error } = await client.from('tamp_password_resets')
+      .update({ used_at: new Date().toISOString() })
+      .eq('token_hash', tokenHash).is('used_at', null)
+      .select('token_hash').maybeSingle()
     if (error) throw error
-    return
+    return Boolean(data)
   }
-  const item = fallback.resets.find((r) => r.token_hash === tokenHash)
-  if (item) item.used = true
+  const item = fallback.resets.find((r) => r.token_hash === tokenHash && !r.used)
+  if (!item) return false
+  item.used = true
+  return true
 }
 
 async function updateUserPassword(email, passwordHash) {
@@ -386,9 +391,10 @@ app.post('/api/auth/reset', async (req, res, next) => {
     if (!token || !validPassword(password)) return res.status(400).json({ message: 'Use a valid reset link and a password of 10–128 characters.' })
     const reset = await findReset(token)
     if (!reset) return res.status(400).json({ message: 'Reset link is invalid or expired. Request a new one.' })
+    const consumed = await consumeReset(reset.tokenHash)
+    if (!consumed) return res.status(400).json({ message: 'Reset link is invalid or has already been used. Request a new one.' })
     const updated = await updateUserPassword(reset.email, await bcrypt.hash(password, 12))
-    if (!updated) return res.status(400).json({ message: 'The account could not be updated. Please contact support.' })
-    await consumeReset(reset.tokenHash)
+    if (!updated) return res.status(400).json({ message: 'The account could not be updated. Please request a new reset link.' })
     return res.json({ success: true, message: 'Password updated. Please log in again.' })
   } catch (error) { next(error) }
 })
