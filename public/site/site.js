@@ -8,16 +8,47 @@ const vf=$('#vf');if(vf)vf.onsubmit=ev=>{ev.preventDefault();const id=$('#vi').v
 try{for(const k of Object.keys(localStorage))if(k.startsWith('tamp_dash_'))(JSON.parse(localStorage[k]).certs||[]).forEach(c=>{if(c.id===id)hit=c})}catch(e){}
 const rev=hit&&hit.status==='revoked';r.style.color=hit&&!rev?'var(--ok)':'var(--bad)';r.textContent=rev?'This certificate has been revoked and is not valid.':hit?'Valid. '+hit.name+' completed '+hit.course+' on '+hit.date+'.':'No certificate found with that ID.';const VL=get('tamp_verifications',[]);VL.push({id,ok:!!hit&&!rev,at:new Date().toISOString()});put('tamp_verifications',VL)};
 const tokH=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join(''),okPw=a=>a.length>=8&&/\d/.test(a)&&/[a-z]/i.test(a);
-const ff=$('#ff');if(ff)ff.onsubmit=ev=>{ev.preventDefault();const em=ff.email.value.trim().toLowerCase(),u=get('tamp_users',[]).find(x=>x.email===em);let link='';
-if(u){const L=get('tamp_resets',[]).filter(x=>x.exp>Date.now()&&!x.used&&x.email!==em),t={t:tokH(),email:em,exp:Date.now()+30*60*1000,used:0};L.push(t);put('tamp_resets',L);link='reset-password.html?t='+t.t}
-ff.innerHTML='<h3>Check your email</h3><p>If an account exists for that email, we have sent a reset link. It works once and expires in 30 minutes.</p>'+(link?'<p class="note">Demo: email is not sent yet. <a href="'+link+'">Open the reset link</a></p>':'')+'<a href="login.html">Back to log in</a>'};
-const rf=$('#rf');if(rf){const tk=new URLSearchParams(location.search).get('t'),rec=get('tamp_resets',[]).find(x=>x.t===tk&&x.exp>Date.now()&&!x.used);
-if(!rec)rf.innerHTML='<h3>This link is not valid</h3><p>It may have expired or already been used. Request a new one.</p><a class="btn" href="forgot-password.html">Request a new link</a>';
-else rf.onsubmit=async ev=>{ev.preventDefault();const a=rf.a.value,b=rf.b.value,m=$('#rm');if(!okPw(a))return m.textContent='Use 8+ characters with letters and a number.';if(a!==b)return m.textContent='The two passwords do not match.';
-const us=get('tamp_users',[]),u=us.find(x=>x.email===rec.email);if(!u)return m.textContent='This account no longer exists.';u.pw=await hash(a);put('tamp_users',us);
-const L=get('tamp_resets',[]);L.forEach(x=>{if(x.email===rec.email)x.used=1});put('tamp_resets',L);const ss=get('tamp_session',null);if(ss&&ss.email===rec.email){try{localStorage.removeItem('tamp_session')}catch(e){}}
-rf.innerHTML='<h3>Password updated</h3><p>For your security you have been logged out everywhere. Log in with your new password.</p><a class="btn" href="login.html">Log in</a>'}}
-
+const apiBase=()=>String(window.TAMP_CONFIG?.apiBase||'').replace(/\/$/,'');
+async function apiRequest(path,body){
+  const base=apiBase();
+  if(!base)throw new Error('Account services are not connected yet. Please try again later.');
+  let response;
+  try{response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+  catch{throw new Error('TAMP could not reach the account server. Please try again later.')}
+  let data={};try{data=await response.json()}catch{}
+  if(!response.ok)throw new Error(data.message||'The request failed. Please try again.')
+  return data
+}
+const ff=$('#ff');
+if(ff)ff.onsubmit=async ev=>{
+  ev.preventDefault();const email=String(ff.email.value||'').trim().toLowerCase(),button=ff.querySelector('button');
+  if(!email)return;
+  button.disabled=true;
+  try{
+    const result=await apiRequest('/auth/forgot',{email});
+    ff.innerHTML='<h3>Check your email</h3><p>'+esc(result.message||'If an account exists, a password reset email will be sent.')+'</p><a href="login.html">Back to log in</a>';
+  }catch(error){
+    const m=document.createElement('p');m.className='msg';m.setAttribute('role','alert');m.textContent=error.message;ff.append(m);button.disabled=false;
+  }
+};
+const rf=$('#rf');
+if(rf){
+  const token=new URLSearchParams(location.search).get('t')||new URLSearchParams(location.search).get('token');
+  if(!token)rf.innerHTML='<h3>Reset link missing</h3><p>Open the complete link from your email or request a new one.</p><a class="btn" href="forgot-password.html">Request a new link</a>';
+  else rf.onsubmit=async ev=>{
+    ev.preventDefault();
+    const password=rf.a.value,confirm=rf.b.value,m=$('#rm'),button=rf.querySelector('button');
+    if(password.length<10||password.length>128)return m.textContent='Use a password between 10 and 128 characters.';
+    if(!/[a-z]/i.test(password)||!/[0-9]/.test(password))return m.textContent='Use at least one letter and one number.';
+    if(password!==confirm)return m.textContent='The two passwords do not match.';
+    button.disabled=true;m.textContent='';
+    try{
+      const result=await apiRequest('/auth/reset',{token,password});
+      try{localStorage.removeItem('tamp_session');sessionStorage.removeItem('tamp_access_token')}catch{}
+      rf.innerHTML='<h3>Password updated</h3><p>'+esc(result.message||'Your password was updated. Please log in.')+'</p><a class="btn" href="login.html">Log in</a>';
+    }catch(error){m.textContent=error.message;button.disabled=false}
+  }
+}
 const df=$('#df');if(df)df.onsubmit=async ev=>{ev.preventDefault();const s=get('tamp_session',null),m=$('#dm');if(!s)return m.textContent='Log in first to delete your account.';if(df.c.value!=='DELETE')return m.textContent='Type DELETE to confirm.';
 const us=get('tamp_users',[]),u=us.find(x=>x.email===s.email);if(!u||u.pw!==await hash(df.p.value))return m.textContent='Password is incorrect.';
 put('tamp_users',us.filter(x=>x.email!==s.email));try{localStorage.removeItem('tamp_session');localStorage.removeItem('tamp_dash_'+s.email)}catch(e){}df.innerHTML='<h3>Account deleted</h3><p>Your account and learning data have been removed from this device.</p><a class="btn" href="index.html">Back to home</a>'};
